@@ -49,6 +49,7 @@ PAGES.home = {
   async render(v) {
     const d = await call('dashboard');
     S.pendingMemos = d.pendingMemos;
+    S.pendingUsers = d.pendingUsers;
     S.quick = d.myMeals;
     renderNav();
     const m = d.mine;
@@ -76,6 +77,9 @@ PAGES.home = {
         </div>
         <p class="small muted" style="margin:10px 0 0">Tomorrow: lunch ${num(d.tomorrowMeals.lunch)} · dinner ${num(d.tomorrowMeals.dinner)}</p>
       </div>
+
+      ${d.pendingUsers ? `<div class="card note row"><span>🙋 ${plural(d.pendingUsers, 'account request')} waiting for approval</span>
+        <button class="btn sm primary" style="flex:none" data-act="go" data-page="users">Review</button></div>` : ''}
 
       ${d.pendingMemos && isMgr() ? `<div class="card note row"><span>📄 ${plural(d.pendingMemos, 'bazar memo')} waiting for review</span>
         <button class="btn sm primary" style="flex:none" data-act="go" data-page="memo">Review</button></div>` : ''}

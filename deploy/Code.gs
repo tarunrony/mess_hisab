@@ -100,6 +100,7 @@ function routes_() {
     'auth.status':      { fn: authStatus_ },
     'auth.setupAdmin':  { fn: setupAdmin_, write: true },
     'auth.login':       { fn: login_ },
+    'auth.register':    { fn: register_, write: true },
 
     'me.get':           { roles: ALL, fn: meGet_ },
     'me.password':      { roles: ALL, fn: changePassword_, write: true },
@@ -136,6 +137,8 @@ function routes_() {
 
     'users.list':       { roles: ALL, fn: usersList_ },
     'users.save':       { roles: ADM, fn: usersSave_, write: true },
+    'users.approve':    { roles: ADM, fn: usersApprove_, write: true },
+    'users.reject':     { roles: ADM, fn: usersReject_, write: true },
     'settings.save':    { roles: ADM, fn: settingsSave_, write: true }
   };
 }
@@ -459,6 +462,32 @@ function authStatus_() {
   return { needsSetup: readAll_('Users').length === 0, messName: getSettings_().messName };
 }
 
+/**
+ * Anyone can ask for an account. It is saved with active = 'pending' and cannot
+ * log in or appear in the accounts until the admin approves it.
+ */
+function register_(d) {
+  const users = readAll_('Users');
+  if (!users.length) throw new Error('There is no admin yet — create the admin account first');
+
+  const cache = CacheService.getScriptCache();
+  const recent = Number(cache.get('register_count') || 0);
+  if (recent >= 10) throw new Error('Too many requests right now. Please try again in an hour.');
+  const pending = users.filter(function (u) { return u.active === 'pending'; }).length;
+  if (pending >= 20) throw new Error('There are already many requests waiting. Please contact the admin.');
+
+  const username = normUsername_(d.username);
+  if (users.some(function (u) { return u.username === username; })) throw new Error('This username is already taken');
+  const phone = clean_(d.phone, 20);
+  if (!/^\+?[0-9 -]{6,20}$/.test(phone)) throw new Error('Enter your phone number so the admin can recognise you');
+
+  const user = newUser_({ name: d.name, username: username, password: d.password, role: 'member', phone: phone, room: d.room });
+  user.active = 'pending';
+  insertRows_('Users', [user]);
+  cache.put('register_count', String(recent + 1), 3600);
+  return { username: username };
+}
+
 /** Creates the very first user (admin). Works only while there are no users. */
 function setupAdmin_(d) {
   if (readAll_('Users').length > 0) throw new Error('The admin already exists, please log in');
@@ -487,6 +516,7 @@ function login_(d) {
     cache.put(failKey, String(fails + 1), 1800);
     throw new Error('Username or password is incorrect');
   }
+  if (user.active === 'pending') throw new Error('Your request is waiting for the admin to approve it.');
   if (user.active !== '1') throw new Error('Your account is deactivated. Please contact the admin.');
   cache.remove(failKey);
   return session_(user, true);
@@ -569,6 +599,25 @@ function usersSave_(d, me) {
     u.passHash = hash_(checkPassword_(d.password), u.salt);
   }
   updateRow_('Users', u._row, u);
+  return usersList_(d, me);
+}
+
+/** Approve an account request: { id, role } */
+function usersApprove_(d, me) {
+  const u = findById_('Users', d.id);
+  if (!u || u.active !== 'pending') throw new Error('This request was not found or is already handled');
+  u.role = ROLES.indexOf(d.role) > -1 ? d.role : 'member';
+  u.active = '1';
+  updateRow_('Users', u._row, u);
+  fillAutoMeals_([addDays_(today_(), 1)], u.id, false);
+  return usersList_(d, me);
+}
+
+/** Reject an account request: the row is removed so the username can be used again */
+function usersReject_(d, me) {
+  const u = findById_('Users', d.id);
+  if (!u || u.active !== 'pending') throw new Error('This request was not found or is already handled');
+  deleteRow_('Users', u._row);
   return usersList_(d, me);
 }
 
@@ -1273,9 +1322,14 @@ function dashboard_(d, me) {
     return m.status === 'pending' && (me.role !== 'member' || m.userId === me.id);
   }).length;
 
+  const pendingUsers = me.role === 'admin'
+    ? readAll_('Users').filter(function (u) { return u.active === 'pending'; }).length
+    : 0;
+
   return {
     today: today,
     settings: getSettings_(),
+    pendingUsers: pendingUsers,
     month: {
       mealRate: report.mealRate, totalMeals: report.totalMeals, totalBazar: report.totalBazar,
       totalShared: report.totalShared, totalDeposit: report.totalDeposit, cashInHand: report.cashInHand
@@ -1408,6 +1462,7 @@ textarea { min-height: 70px; resize: vertical; }
 .drawer nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .drawer nav a { padding: 11px 12px; border-radius: 10px; color: var(--text); text-decoration: none; cursor: pointer; display: flex; gap: 10px; }
 .drawer nav a.active { background: var(--primary-soft); font-weight: 600; }
+.drawer nav a .count { margin-left: auto; background: var(--danger); color: #fff; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 0 8px; }
 .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 30; display: none; }
 .scrim.open { display: block; }
 
@@ -1537,7 +1592,19 @@ tfoot td { font-weight: 700; }
         <label>Username<input name="username" required autocomplete="username" autocapitalize="none"></label>
         <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
         <button class="btn primary block" type="submit">Log in</button>
+        <button class="btn ghost block" type="button" data-act="show-register">New here? Request an account</button>
         <p class="muted small center">Forgot your password? Ask the admin to reset it.</p>
+      </form>
+
+      <form id="registerForm" class="stack hidden">
+        <div class="note">Fill this in and the admin will approve your account.</div>
+        <label>Your name<input name="name" required maxlength="60"></label>
+        <label>Phone<input name="phone" type="tel" required placeholder="01XXXXXXXXX"></label>
+        <label>Username<input name="username" required autocapitalize="none" placeholder="e.g. rahim or your phone number"></label>
+        <label>Password<input name="password" type="password" required minlength="4" autocomplete="new-password"></label>
+        <label>Room (optional)<input name="room" maxlength="20"></label>
+        <button class="btn primary block" type="submit">Send request</button>
+        <button class="btn ghost block" type="button" data-act="show-login">Back to log in</button>
       </form>
 
       <form id="setupForm" class="stack hidden">
@@ -1743,18 +1810,32 @@ function appLink() {
   return window.MESS_API_URL ? location.origin + location.pathname : (S.appUrl || '');
 }
 
-/** After adding a member or resetting a password: copy or send the details on WhatsApp */
-function shareLogin(name, username, password) {
+/** WhatsApp number from a Bangladeshi phone (01XXXXXXXXX → 8801XXXXXXXXX), or '' */
+function waNumber(phone) {
+  const d = String(phone || '').replace(/\\D/g, '');
+  if (/^01\\d{9}$/.test(d)) return '88' + d;
+  return d.length >= 10 ? d : '';
+}
+
+/**
+ * After adding a member, resetting a password or approving a request:
+ * copy or send the login details on WhatsApp. Without a password it is an "approved" message.
+ */
+function shareLogin(name, username, password, phone) {
   const link = appLink();
-  const msg = \`Hi \${name}, here is your login for \${S.settings.messName || 'our mess'}:\\n\` +
-    (link ? \`Link: \${link}\\n\` : '') + \`Username: \${username}\\nPassword: \${password}\\n\` +
-    \`You can change your password from Profile after logging in.\`;
-  openModal('Share login details', \`<div class="stack">
-      <p class="small muted" style="margin:0">Send this to \${esc(name)} so they can log in.</p>
+  const mess = S.settings.messName || 'our mess';
+  const msg = (password
+    ? \`Hi \${name}, here is your login for \${mess}:\\n\`
+    : \`Hi \${name}, your account for \${mess} is approved. You can log in now:\\n\`) +
+    (link ? \`Link: \${link}\\n\` : '') + \`Username: \${username}\\n\` +
+    (password ? \`Password: \${password}\\nYou can change your password from Profile after logging in.\` : \`Use the password you chose when you asked for the account.\`);
+  const wa = 'https://wa.me/' + waNumber(phone) + '?text=' + encodeURIComponent(msg);
+  openModal(password ? 'Share login details' : 'Let them know', \`<div class="stack">
+      <p class="small muted" style="margin:0">Send this to \${esc(name)}\${password ? ' so they can log in' : ''}.</p>
       <textarea id="shareText" rows="6" readonly>\${esc(msg)}</textarea>
       <div class="row">
         <button class="btn" data-act="copy-share">📋 Copy</button>
-        <a class="btn ok" href="https://wa.me/?text=\${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
+        <a class="btn ok" href="\${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>
       </div></div>\`);
 }
 
@@ -1824,8 +1905,10 @@ function allowed(page) { return PAGES[page] && PAGES[page].roles.indexOf(S.user.
 
 function renderNav() {
   const pages = NAV_ORDER.filter(allowed);
+  const counts = { memo: S.pendingMemos, users: S.pendingUsers };
   $('#drawerNav').innerHTML = pages.map(p =>
-    \`<a data-act="go" data-page="\${p}" class="\${S.page === p ? 'active' : ''}"><span>\${PAGES[p].icon}</span>\${PAGES[p].title}</a>\`).join('');
+    \`<a data-act="go" data-page="\${p}" class="\${S.page === p ? 'active' : ''}"><span>\${PAGES[p].icon}</span>\${PAGES[p].title}
+     \${counts[p] ? \`<span class="count">\${num(counts[p])}</span>\` : ''}</a>\`).join('');
 
   const bottom = (isMgr() ? ['home', 'daymeal', 'memo', 'report'] : ['home', 'mymeal', 'memo', 'duty']).filter(allowed);
   $('#bottomNav').innerHTML = bottom.map(p =>
@@ -1898,15 +1981,32 @@ function startApp(res) {
   go(store.get('page') || 'home');
 }
 
+function showAuthForm(id) {
+  ['#loginForm', '#setupForm', '#registerForm'].forEach(f => $(f).classList.toggle('hidden', f !== id));
+}
+
 async function showAuth() {
   $('#app').classList.add('hidden');
   $('#auth').classList.remove('hidden');
-  $('#loginForm').classList.add('hidden');
-  $('#setupForm').classList.add('hidden');
+  showAuthForm(null);
   const st = await call('auth.status');
   if (st.messName) $('#authTitle').textContent = document.title = st.messName;
-  $(st.needsSetup ? '#setupForm' : '#loginForm').classList.remove('hidden');
+  showAuthForm(st.needsSetup ? '#setupForm' : '#loginForm');
 }
+
+ACT['show-register'] = () => showAuthForm('#registerForm');
+ACT['show-login'] = () => showAuthForm('#loginForm');
+
+$('#registerForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    const res = await call('auth.register', formData(e.target));
+    e.target.reset();
+    showAuthForm('#loginForm');
+    $('#loginForm').username.value = res.username;
+    toast('Request sent! You can log in once the admin approves it.', 'ok');
+  } catch (err) { /* toast */ }
+});
 
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -1980,6 +2080,7 @@ PAGES.home = {
   async render(v) {
     const d = await call('dashboard');
     S.pendingMemos = d.pendingMemos;
+    S.pendingUsers = d.pendingUsers;
     S.quick = d.myMeals;
     renderNav();
     const m = d.mine;
@@ -2007,6 +2108,9 @@ PAGES.home = {
         </div>
         <p class="small muted" style="margin:10px 0 0">Tomorrow: lunch \${num(d.tomorrowMeals.lunch)} · dinner \${num(d.tomorrowMeals.dinner)}</p>
       </div>
+
+      \${d.pendingUsers ? \`<div class="card note row"><span>🙋 \${plural(d.pendingUsers, 'account request')} waiting for approval</span>
+        <button class="btn sm primary" style="flex:none" data-act="go" data-page="users">Review</button></div>\` : ''}
 
       \${d.pendingMemos && isMgr() ? \`<div class="card note row"><span>📄 \${plural(d.pendingMemos, 'bazar memo')} waiting for review</span>
         <button class="btn sm primary" style="flex:none" data-act="go" data-page="memo">Review</button></div>\` : ''}
@@ -2624,12 +2728,31 @@ ACT['duty-generate'] = async () => {
 PAGES.users = {
   title: 'Members & roles', short: 'Members', icon: '👥', roles: ADM,
   async render(v) {
-    const users = await getUsers(true);
+    const all = await getUsers(true);
+    const requests = all.filter(u => u.active === 'pending');
+    const users = all.filter(u => u.active !== 'pending');
+    S.pendingUsers = requests.length;
+    renderNav();
+    const roleSelect = id => \`<select id="role_\${esc(id)}" style="flex:none;width:auto;min-height:34px;padding:4px 8px">
+      <option value="member">Member</option><option value="manager">Manager</option><option value="admin">Admin</option></select>\`;
     v.innerHTML = \`
+      \${requests.length ? \`<div class="card">
+        <div class="card-head"><h3>🙋 Account requests</h3><span class="badge warn">\${num(requests.length)} waiting</span></div>
+        <div class="list">\${requests.map(u => \`<div class="item" style="flex-wrap:wrap">
+          <div class="grow"><div class="title">\${esc(u.name)}</div>
+            <div class="sub">@\${esc(u.username)} · \${esc(u.phone)}\${u.room ? ' · room ' + esc(u.room) : ''} · asked \${esc(u.createdAt)}</div></div>
+          <div class="row" style="flex:0 0 100%;justify-content:flex-end">
+            \${roleSelect(u.id)}
+            <button class="btn sm danger" style="flex:none" data-act="user-reject" data-id="\${u.id}">✕ Reject</button>
+            <button class="btn sm primary" style="flex:none" data-act="user-approve" data-id="\${u.id}">✓ Approve</button>
+          </div>
+        </div>\`).join('')}</div>
+      </div>\` : ''}
       <div class="toolbar"><button class="btn primary" data-act="user-edit">+ Add member</button></div>
       <div class="card">
         <p class="small muted" style="margin-top:0"><b>Admin</b> can do everything and sets roles · <b>Manager</b> handles meals, expenses, deposits and duties ·
-          <b>Member</b> sets own meals, uploads memos and sees the accounts.</p>
+          <b>Member</b> sets own meals, uploads memos and sees the accounts.
+          New people can also ask for an account from the login page — their requests appear here.</p>
         <div class="list">\${users.map(u => \`<div class="item">
           <div class="grow">
             <div class="title">\${esc(u.name)} <span class="badge \${u.role === 'member' ? 'gray' : ''}">\${ROLE_LABEL[u.role]}</span>
@@ -2665,8 +2788,25 @@ ACT['user-edit'] = async el => {
     toast('Member saved', 'ok');
     await refresh();
     // New member or password reset: offer to send the login details (true = keep that dialog open)
-    if (data.password) { shareLogin(data.name, String(data.username).trim().toLowerCase(), data.password); return true; }
+    if (data.password) { shareLogin(data.name, String(data.username).trim().toLowerCase(), data.password, data.phone); return true; }
   });
+};
+
+ACT['user-approve'] = async el => {
+  const u = (S.users || []).filter(x => x.id === el.dataset.id)[0];
+  if (!u) return;
+  S.users = await call('users.approve', { id: u.id, role: $('#role_' + u.id).value });
+  toast(u.name + ' is approved', 'ok');
+  await refresh();
+  shareLogin(u.name, u.username, '', u.phone);
+};
+
+ACT['user-reject'] = async el => {
+  const u = (S.users || []).filter(x => x.id === el.dataset.id)[0];
+  if (!u || !(await confirmBox(\`Reject the account request from \${u.name}?\`, 'Reject'))) return;
+  S.users = await call('users.reject', { id: u.id });
+  toast('Request rejected');
+  refresh();
 };
 
 /* ---------------- Settings (admin) ---------------- */

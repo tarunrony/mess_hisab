@@ -12,6 +12,7 @@ It runs on **Google Apps Script** and keeps all data in your own **Google Sheet*
 
 | What | Member | Manager | Admin |
 |---|:-:|:-:|:-:|
+| Ask for an account from the login page (anyone) | ✅ | ✅ | ✅ |
 | Switch own meals on/off (one tap on Home) | ✅ | ✅ | ✅ |
 | Upload a bazar memo photo | ✅ | ✅ | ✅ |
 | Mark own duty as done | ✅ | ✅ | ✅ |
@@ -20,7 +21,7 @@ It runs on **Google Apps Script** and keeps all data in your own **Google Sheet*
 | Add / edit expenses and deposits | – | ✅ | ✅ |
 | Review memos (approve / reject) | – | ✅ | ✅ |
 | Make bazar and cleaning rosters | – | ✅ | ✅ |
-| Add members, set roles, reset passwords | – | – | ✅ |
+| Add members, approve account requests, set roles, reset passwords | – | – | ✅ |
 | Settings (meal cut-off times etc.) | – | – | ✅ |
 
 ## How the accounts work
@@ -44,7 +45,11 @@ A **+** balance means the member gets money back; **−** means they still have 
 2. **Paste the code** — in the Sheet open **Extensions → Apps Script**. Delete everything in `Code.gs`, paste the whole of [`deploy/Code.gs`](deploy/Code.gs) (on GitHub: open it → **Raw** → Ctrl+A, Ctrl+C) and press **Ctrl+S**.
 3. **Deploy** — **Deploy → New deployment →** ⚙️ **Web app**, set **Execute as: Me** and **Who has access: Anyone**, press **Deploy** and allow the permissions (if you see "Google hasn't verified this app": **Advanced → Go to … (unsafe) → Allow** — it is your own script).
 4. **Open the Web app URL** and create the admin account. The sheets, the Drive folder for memo photos and the nightly auto-meal job are set up automatically.
-5. **Add members** from **Members & roles**. After saving, the app offers to send each person their login on **WhatsApp** or copy it. Give one person the **Manager** role.
+5. **Add members** — either way works:
+   - **They ask:** share the link; each person taps **"New here? Request an account"** on the login page and fills in name, phone, username and password. The admin sees the requests on **Home** and in **Members & roles**, picks a role and taps **Approve** (or **Reject**). Until approved they cannot log in and are not counted in the accounts.
+   - **You add them:** **Members & roles → + Add member**. After saving, the app offers to send them their login on **WhatsApp** or copy it.
+
+   Give one person the **Manager** role. (To limit spam, at most 10 requests per hour and 20 waiting requests are accepted.)
 
 > ⚠️ Create the admin account **before** sharing the link — until then, whoever opens it first can become admin.
 > "Anyone" access is safe after that: nothing can be seen without logging in, and only you can open the Sheet.

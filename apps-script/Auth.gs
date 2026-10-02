@@ -74,6 +74,32 @@ function authStatus_() {
   return { needsSetup: readAll_('Users').length === 0, messName: getSettings_().messName };
 }
 
+/**
+ * Anyone can ask for an account. It is saved with active = 'pending' and cannot
+ * log in or appear in the accounts until the admin approves it.
+ */
+function register_(d) {
+  const users = readAll_('Users');
+  if (!users.length) throw new Error('There is no admin yet — create the admin account first');
+
+  const cache = CacheService.getScriptCache();
+  const recent = Number(cache.get('register_count') || 0);
+  if (recent >= 10) throw new Error('Too many requests right now. Please try again in an hour.');
+  const pending = users.filter(function (u) { return u.active === 'pending'; }).length;
+  if (pending >= 20) throw new Error('There are already many requests waiting. Please contact the admin.');
+
+  const username = normUsername_(d.username);
+  if (users.some(function (u) { return u.username === username; })) throw new Error('This username is already taken');
+  const phone = clean_(d.phone, 20);
+  if (!/^\+?[0-9 -]{6,20}$/.test(phone)) throw new Error('Enter your phone number so the admin can recognise you');
+
+  const user = newUser_({ name: d.name, username: username, password: d.password, role: 'member', phone: phone, room: d.room });
+  user.active = 'pending';
+  insertRows_('Users', [user]);
+  cache.put('register_count', String(recent + 1), 3600);
+  return { username: username };
+}
+
 /** Creates the very first user (admin). Works only while there are no users. */
 function setupAdmin_(d) {
   if (readAll_('Users').length > 0) throw new Error('The admin already exists, please log in');
@@ -102,6 +128,7 @@ function login_(d) {
     cache.put(failKey, String(fails + 1), 1800);
     throw new Error('Username or password is incorrect');
   }
+  if (user.active === 'pending') throw new Error('Your request is waiting for the admin to approve it.');
   if (user.active !== '1') throw new Error('Your account is deactivated. Please contact the admin.');
   cache.remove(failKey);
   return session_(user, true);
@@ -184,6 +211,25 @@ function usersSave_(d, me) {
     u.passHash = hash_(checkPassword_(d.password), u.salt);
   }
   updateRow_('Users', u._row, u);
+  return usersList_(d, me);
+}
+
+/** Approve an account request: { id, role } */
+function usersApprove_(d, me) {
+  const u = findById_('Users', d.id);
+  if (!u || u.active !== 'pending') throw new Error('This request was not found or is already handled');
+  u.role = ROLES.indexOf(d.role) > -1 ? d.role : 'member';
+  u.active = '1';
+  updateRow_('Users', u._row, u);
+  fillAutoMeals_([addDays_(today_(), 1)], u.id, false);
+  return usersList_(d, me);
+}
+
+/** Reject an account request: the row is removed so the username can be used again */
+function usersReject_(d, me) {
+  const u = findById_('Users', d.id);
+  if (!u || u.active !== 'pending') throw new Error('This request was not found or is already handled');
+  deleteRow_('Users', u._row);
   return usersList_(d, me);
 }
 

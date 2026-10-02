@@ -298,12 +298,31 @@ ACT['duty-generate'] = async () => {
 PAGES.users = {
   title: 'Members & roles', short: 'Members', icon: '👥', roles: ADM,
   async render(v) {
-    const users = await getUsers(true);
+    const all = await getUsers(true);
+    const requests = all.filter(u => u.active === 'pending');
+    const users = all.filter(u => u.active !== 'pending');
+    S.pendingUsers = requests.length;
+    renderNav();
+    const roleSelect = id => `<select id="role_${esc(id)}" style="flex:none;width:auto;min-height:34px;padding:4px 8px">
+      <option value="member">Member</option><option value="manager">Manager</option><option value="admin">Admin</option></select>`;
     v.innerHTML = `
+      ${requests.length ? `<div class="card">
+        <div class="card-head"><h3>🙋 Account requests</h3><span class="badge warn">${num(requests.length)} waiting</span></div>
+        <div class="list">${requests.map(u => `<div class="item" style="flex-wrap:wrap">
+          <div class="grow"><div class="title">${esc(u.name)}</div>
+            <div class="sub">@${esc(u.username)} · ${esc(u.phone)}${u.room ? ' · room ' + esc(u.room) : ''} · asked ${esc(u.createdAt)}</div></div>
+          <div class="row" style="flex:0 0 100%;justify-content:flex-end">
+            ${roleSelect(u.id)}
+            <button class="btn sm danger" style="flex:none" data-act="user-reject" data-id="${u.id}">✕ Reject</button>
+            <button class="btn sm primary" style="flex:none" data-act="user-approve" data-id="${u.id}">✓ Approve</button>
+          </div>
+        </div>`).join('')}</div>
+      </div>` : ''}
       <div class="toolbar"><button class="btn primary" data-act="user-edit">+ Add member</button></div>
       <div class="card">
         <p class="small muted" style="margin-top:0"><b>Admin</b> can do everything and sets roles · <b>Manager</b> handles meals, expenses, deposits and duties ·
-          <b>Member</b> sets own meals, uploads memos and sees the accounts.</p>
+          <b>Member</b> sets own meals, uploads memos and sees the accounts.
+          New people can also ask for an account from the login page — their requests appear here.</p>
         <div class="list">${users.map(u => `<div class="item">
           <div class="grow">
             <div class="title">${esc(u.name)} <span class="badge ${u.role === 'member' ? 'gray' : ''}">${ROLE_LABEL[u.role]}</span>
@@ -339,8 +358,25 @@ ACT['user-edit'] = async el => {
     toast('Member saved', 'ok');
     await refresh();
     // New member or password reset: offer to send the login details (true = keep that dialog open)
-    if (data.password) { shareLogin(data.name, String(data.username).trim().toLowerCase(), data.password); return true; }
+    if (data.password) { shareLogin(data.name, String(data.username).trim().toLowerCase(), data.password, data.phone); return true; }
   });
+};
+
+ACT['user-approve'] = async el => {
+  const u = (S.users || []).filter(x => x.id === el.dataset.id)[0];
+  if (!u) return;
+  S.users = await call('users.approve', { id: u.id, role: $('#role_' + u.id).value });
+  toast(u.name + ' is approved', 'ok');
+  await refresh();
+  shareLogin(u.name, u.username, '', u.phone);
+};
+
+ACT['user-reject'] = async el => {
+  const u = (S.users || []).filter(x => x.id === el.dataset.id)[0];
+  if (!u || !(await confirmBox(`Reject the account request from ${u.name}?`, 'Reject'))) return;
+  S.users = await call('users.reject', { id: u.id });
+  toast('Request rejected');
+  refresh();
 };
 
 /* ---------------- Settings (admin) ---------------- */

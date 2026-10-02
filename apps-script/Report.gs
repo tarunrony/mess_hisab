@@ -116,9 +116,14 @@ function dashboard_(d, me) {
     return m.status === 'pending' && (me.role !== 'member' || m.userId === me.id);
   }).length;
 
+  const pendingUsers = me.role === 'admin'
+    ? readAll_('Users').filter(function (u) { return u.active === 'pending'; }).length
+    : 0;
+
   return {
     today: today,
     settings: getSettings_(),
+    pendingUsers: pendingUsers,
     month: {
       mealRate: report.mealRate, totalMeals: report.totalMeals, totalBazar: report.totalBazar,
       totalShared: report.totalShared, totalDeposit: report.totalDeposit, cashInHand: report.cashInHand

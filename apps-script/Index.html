@@ -23,7 +23,19 @@
         <label>Username<input name="username" required autocomplete="username" autocapitalize="none"></label>
         <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
         <button class="btn primary block" type="submit">Log in</button>
+        <button class="btn ghost block" type="button" data-act="show-register">New here? Request an account</button>
         <p class="muted small center">Forgot your password? Ask the admin to reset it.</p>
+      </form>
+
+      <form id="registerForm" class="stack hidden">
+        <div class="note">Fill this in and the admin will approve your account.</div>
+        <label>Your name<input name="name" required maxlength="60"></label>
+        <label>Phone<input name="phone" type="tel" required placeholder="01XXXXXXXXX"></label>
+        <label>Username<input name="username" required autocapitalize="none" placeholder="e.g. rahim or your phone number"></label>
+        <label>Password<input name="password" type="password" required minlength="4" autocomplete="new-password"></label>
+        <label>Room (optional)<input name="room" maxlength="20"></label>
+        <button class="btn primary block" type="submit">Send request</button>
+        <button class="btn ghost block" type="button" data-act="show-login">Back to log in</button>
       </form>
 
       <form id="setupForm" class="stack hidden">

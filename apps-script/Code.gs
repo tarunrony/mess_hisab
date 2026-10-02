@@ -93,6 +93,7 @@ function routes_() {
     'auth.status':      { fn: authStatus_ },
     'auth.setupAdmin':  { fn: setupAdmin_, write: true },
     'auth.login':       { fn: login_ },
+    'auth.register':    { fn: register_, write: true },
 
     'me.get':           { roles: ALL, fn: meGet_ },
     'me.password':      { roles: ALL, fn: changePassword_, write: true },
@@ -129,6 +130,8 @@ function routes_() {
 
     'users.list':       { roles: ALL, fn: usersList_ },
     'users.save':       { roles: ADM, fn: usersSave_, write: true },
+    'users.approve':    { roles: ADM, fn: usersApprove_, write: true },
+    'users.reject':     { roles: ADM, fn: usersReject_, write: true },
     'settings.save':    { roles: ADM, fn: settingsSave_, write: true }
   };
 }
