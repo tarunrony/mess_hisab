@@ -311,6 +311,7 @@ function startApp(res) {
   S.appUrl = res.appUrl || S.appUrl;
   S.month = thisMonth();
   $('#messName').textContent = document.title = S.settings.messName || 'Mess Meal Manager';
+  $('.top-logo').src = $('.brand-logo').src;   // the logo is embedded once, in the login card
   $('#userName').textContent = S.user.name;
   $('#userRole').textContent = ROLE_LABEL[S.user.role];
   $('#auth').classList.add('hidden');

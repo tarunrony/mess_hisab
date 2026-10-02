@@ -14,7 +14,7 @@
   <section id="auth" class="auth hidden">
     <div class="auth-card">
       <div class="brand">
-        <div class="brand-icon">🍛</div>
+        <img class="brand-logo" src="<?!= include('Logo'); ?>" alt="Logo">
         <h1 id="authTitle"><?= messName ?></h1>
         <p class="muted" id="authSub">Mess Meal Manager</p>
       </div>
@@ -53,6 +53,7 @@
   <div id="app" class="hidden">
     <header class="topbar">
       <button class="icon-btn" data-act="menu" aria-label="Menu">☰</button>
+      <img class="top-logo" alt="">
       <div class="topbar-title">
         <strong id="messName"><?= messName ?></strong>
         <span id="pageTitle" class="muted small"></span>

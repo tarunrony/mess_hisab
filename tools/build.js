@@ -76,14 +76,15 @@ fs.writeFileSync(OUT, out);
 report(OUT, out, ', ' + out.split('\n').length + ' lines');
 
 // 3) Static page for Vercel: the page comes from Vercel, the data from the Apps Script Web App (doPost)
-const icon = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍛</text></svg>";
 const webHead = [
   '<meta charset="utf-8">',
   '  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">',
   '  <title>Mess Meal Manager</title>',
-  '  <link rel="icon" href="data:image/svg+xml,' + encodeURIComponent(icon) + '">',
+  '  <link rel="icon" type="image/png" href="logo.png">',
+  '  <link rel="apple-touch-icon" href="logo.png">',
   '  <script src="config.js"></script>'
 ].join('\n');
+if (!fs.existsSync(path.join(ROOT, 'public', 'logo.png'))) console.warn('⚠️  public/logo.png is missing (browser-tab icon)');
 const web = html
   .split('{{MESS_NAME}}').join('Mess Meal Manager')
   .replace('  <base target="_top">\n', '')

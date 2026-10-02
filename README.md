@@ -120,6 +120,8 @@ If the Apps Script URL ever changes, just edit `public/config.js` again — Verc
 deploy/Code.gs      ⭐ the whole app in one file — paste this into Apps Script
 public/index.html   the same app for Vercel (generated), loads public/config.js
 public/config.js    the Apps Script Web App URL used by the Vercel site (edit by hand)
+public/logo.png     browser-tab / home-screen icon (also used by Apps Script via GitHub raw URL)
+assets/             logo: original photo and square crops
 vercel.json         tells Vercel to serve public/
 tools/build.js      builds deploy/Code.gs and public/index.html from apps-script/
 apps-script/        source files
@@ -131,6 +133,7 @@ apps-script/        source files
   Duties.gs         bazar and cleaning duties, rosters
   Report.gs         monthly report and home dashboard
   Index.html        page structure
+  Logo.html         the logo as an embedded image (data URI, from assets/logo-192.jpg)
   Styles.html       design (mobile + dark mode)
   JsCore.html       API calls, login, navigation, sharing logins
   JsPages.html      Home, My meals, Memos, Duties, Report, Profile

@@ -10,14 +10,18 @@
 const APP_NAME = 'Mess Meal Manager';
 const APP_TZ = 'Asia/Dhaka';
 const TOKEN_DAYS = 30;
+// Browser-tab icon; Apps Script needs a public image URL for it
+const APP_ICON_URL = 'https://raw.githubusercontent.com/tarunrony/mess_hisab/main/public/logo.png';
 
 /** Serves the app when the Web App URL is opened */
 function doGet() {
   let messName = APP_NAME;
   try { messName = getSettings_().messName || APP_NAME; } catch (e) { /* first run */ }
-  return HtmlService.createHtmlOutput(pageHtml_(messName))
+  const out = HtmlService.createHtmlOutput(pageHtml_(messName))
     .setTitle(messName)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover');
+  try { out.setFaviconUrl(APP_ICON_URL); } catch (e) { /* no icon is fine */ }
+  return out;
 }
 
 // BUILD:PAGE-START — in the single-file version (deploy/Code.gs) this block is replaced by embedded HTML
