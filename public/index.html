@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Mess Meal Manager</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20100%20100'%3E%3Ctext%20y%3D'.9em'%20font-size%3D'90'%3E%F0%9F%8D%9B%3C%2Ftext%3E%3C%2Fsvg%3E">
+  <script src="config.js"></script>
+  <meta name="theme-color" content="#0f766e">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Hind+Siliguri:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+:root {
+  --bg: #f3f6f5;
+  --card: #ffffff;
+  --text: #13201d;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --primary: #0f766e;
+  --primary-soft: #ccfbf1;
+  --on-primary: #ffffff;
+  --accent: #f59e0b;
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+  --ok: #16a34a;
+  --ok-soft: #dcfce7;
+  --warn-soft: #fef3c7;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(15,118,110,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1211; --card: #131d1b; --text: #e6efed; --muted: #94a3b8; --line: #23302d;
+    --primary: #2dd4bf; --primary-soft: #134e48; --on-primary: #042f2b; --danger-soft: #451a1a; --ok-soft: #14361f; --warn-soft: #3d2f0b;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: 'Inter', 'Hind Siliguri', system-ui, sans-serif;
+  background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+}
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.center { text-align: center; }
+.right { text-align: right; }
+.pos { color: var(--ok); font-weight: 600; }
+.neg { color: var(--danger); font-weight: 600; }
+h2 { font-size: 18px; margin: 4px 0 12px; }
+h3 { font-size: 16px; margin: 0 0 10px; }
+
+/* ---------- Forms ---------- */
+label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 500; }
+input, select, textarea {
+  font: inherit; color: var(--text); background: var(--card);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; min-height: 44px;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+textarea { min-height: 70px; resize: vertical; }
+.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 15px; }
+.check input { width: 20px; min-height: 20px; height: 20px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.btn {
+  font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 10px; padding: 9px 14px; min-height: 42px; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none;
+}
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn.danger { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); }
+.btn.ok { color: var(--ok); border-color: var(--ok-soft); background: var(--ok-soft); }
+.btn.ghost { background: transparent; }
+.btn.sm { min-height: 34px; padding: 4px 10px; font-size: 13px; }
+.btn.block { width: 100%; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.icon-btn { border: 0; background: transparent; color: inherit; font-size: 20px; width: 42px; height: 42px; border-radius: 10px; cursor: pointer; }
+
+/* ---------- Login ---------- */
+.auth { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.auth-card { width: 100%; max-width: 380px; background: var(--card); border-radius: 20px; padding: 24px; box-shadow: var(--shadow); }
+.brand { text-align: center; margin-bottom: 16px; }
+.brand-icon { font-size: 44px; }
+.brand h1 { margin: 4px 0 0; font-size: 22px; }
+.brand p { margin: 0; }
+.note { background: var(--warn-soft); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+
+/* ---------- Layout ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; background: var(--card); border-bottom: 1px solid var(--line);
+}
+.topbar-title { flex: 1; display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.topbar-title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-chip { border: 0; background: var(--primary-soft); color: var(--text); border-radius: 999px; padding: 6px 10px; font: inherit; font-size: 13px; display: flex; gap: 6px; align-items: center; cursor: pointer; max-width: 50%; }
+.user-chip span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-weight: 600; white-space: nowrap; }
+.badge.gray { background: var(--line); color: var(--text); }
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
+.badge.warn { background: var(--warn-soft); color: #b45309; }
+.badge.danger { background: var(--danger-soft); color: var(--danger); }
+
+.view { padding: 14px 16px 96px; max-width: 980px; margin: 0 auto; }
+
+.drawer {
+  position: fixed; top: 0; bottom: 0; left: 0; width: 270px; max-width: 85vw; z-index: 40; background: var(--card);
+  transform: translateX(-100%); transition: transform .2s ease; padding: 10px; display: flex; flex-direction: column; gap: 6px;
+}
+.drawer.open { transform: none; }
+.drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px 8px; }
+.drawer nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.drawer nav a { padding: 11px 12px; border-radius: 10px; color: var(--text); text-decoration: none; cursor: pointer; display: flex; gap: 10px; }
+.drawer nav a.active { background: var(--primary-soft); font-weight: 600; }
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 30; display: none; }
+.scrim.open { display: block; }
+
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: flex; background: var(--card);
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
+}
+.bottom-nav a { flex: 1; text-align: center; padding: 7px 2px 6px; font-size: 12px; color: var(--muted); text-decoration: none; cursor: pointer; position: relative; }
+.bottom-nav a .ico { display: block; font-size: 20px; line-height: 1.2; }
+.bottom-nav a.active { color: var(--primary); font-weight: 600; }
+.dot { position: absolute; top: 4px; left: 55%; background: var(--danger); color: #fff; font-size: 10px; border-radius: 999px; padding: 0 5px; }
+
+@media (min-width: 900px) {
+  .drawer { transform: none; top: 59px; border-right: 1px solid var(--line); }
+  .scrim, .scrim.open { display: none; }
+  .topbar [data-act="menu"], .drawer-head { display: none; }
+  .bottom-nav { display: none; }
+  .view { margin-left: 270px; padding-bottom: 32px; }
+}
+
+/* ---------- Cards ---------- */
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 14px; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.card-head h3 { margin: 0; }
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+@media (min-width: 640px) { .stats { grid-template-columns: repeat(4, 1fr); } }
+.stat { background: var(--card); border-radius: var(--radius); padding: 12px; box-shadow: var(--shadow); }
+.stat .lbl { font-size: 12px; color: var(--muted); }
+.stat .val { font-size: 20px; font-weight: 700; }
+.stat.hl { background: var(--primary); color: var(--on-primary); }
+.stat.hl .lbl { color: var(--on-primary); opacity: .85; }
+
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.toolbar input[type="month"], .toolbar input[type="date"] { width: auto; flex: 1; min-width: 150px; }
+
+/* ---------- Lists and tables ---------- */
+.list { display: flex; flex-direction: column; }
+.item { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.item:last-child { border-bottom: 0; }
+.item .grow { flex: 1; min-width: 0; }
+.item .title { font-weight: 600; }
+.item .sub { font-size: 13px; color: var(--muted); }
+.amount { font-weight: 700; white-space: nowrap; }
+.empty { text-align: center; color: var(--muted); padding: 24px 8px; }
+
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; }
+td.num, th.num { text-align: right; }
+tfoot td { font-weight: 700; }
+.sheet th, .sheet td { padding: 4px 6px; text-align: center; font-size: 12px; }
+.sheet td:first-child, .sheet th:first-child { text-align: left; position: sticky; left: 0; background: var(--card); }
+
+/* ---------- Meal steppers ---------- */
+.meal-day { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.meal-day:last-child { border-bottom: 0; }
+.meal-day .d { flex: 1; min-width: 0; }
+.meal-day .d strong { display: block; }
+.meal-day.today { background: var(--primary-soft); margin: 0 -14px; padding: 10px 14px; }
+.stepper { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); }
+.stepper button { width: 34px; height: 38px; border: 0; background: transparent; font-size: 18px; cursor: pointer; color: var(--text); }
+.stepper .v { min-width: 26px; text-align: center; font-weight: 700; }
+.stepper.on { border-color: var(--primary); }
+.stepper.on .v { color: var(--primary); }
+.stepper.locked { opacity: .45; }
+.stepper.locked button { cursor: not-allowed; }
+.slot { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); }
+
+/* ---------- Duties ---------- */
+.duty-ico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-size: 20px; background: var(--primary-soft); flex-shrink: 0; }
+.duty-ico.clean { background: #e0f2fe; }
+
+/* ---------- Modal, loader, toast ---------- */
+.modal { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
+@media (min-width: 640px) { .modal { align-items: center; } }
+.modal-card { background: var(--card); width: 100%; max-width: 520px; max-height: 92vh; border-radius: 18px 18px 0 0; display: flex; flex-direction: column; }
+@media (min-width: 640px) { .modal-card { border-radius: 18px; } }
+.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 10px 4px 16px; }
+.modal-body { padding: 8px 16px 16px; overflow-y: auto; }
+.modal-body img.memo { width: 100%; max-height: 55vh; object-fit: contain; border-radius: 10px; background: #fff; }
+
+.loader { position: fixed; inset: 0; z-index: 60; background: rgba(255,255,255,.35); display: grid; place-items: center; }
+.spinner { width: 42px; height: 42px; border-radius: 50%; border: 4px solid var(--primary-soft); border-top-color: var(--primary); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.toasts { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 70; display: flex; flex-direction: column; gap: 8px; width: calc(100% - 32px); max-width: 420px; }
+.toast { background: #13201d; color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 14px; box-shadow: var(--shadow); animation: up .2s ease; }
+.toast.err { background: var(--danger); }
+.toast.ok { background: var(--ok); }
+@keyframes up { from { transform: translateY(10px); opacity: 0; } }
+.preview { max-width: 100%; max-height: 220px; border-radius: 10px; display: block; margin-top: 6px; }
+
+.switcher { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.switcher strong { flex: 1; text-align: center; }
+.switcher .btn { flex: 0 0 auto; }
+
+@media print {
+  .topbar, .drawer, .scrim, .bottom-nav, .toolbar, .switcher .btn, .btn { display: none !important; }
+  .view { margin: 0; padding: 0; max-width: none; }
+  .card, .stat { box-shadow: none; border: 1px solid #ddd; }
+}
+/* ---------- One-tap meal switches (home) ---------- */
+.quick { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; align-items: center; }
+.quick .day { font-weight: 600; font-size: 14px; padding-right: 4px; }
+.qbtn {
+  font: inherit; font-weight: 600; border-radius: 12px; min-height: 52px; padding: 6px 10px; cursor: pointer;
+  border: 2px solid var(--line); background: var(--card); color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2;
+}
+.qbtn small { font-weight: 500; font-size: 12px; }
+.qbtn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--text); }
+.qbtn.locked { opacity: .5; cursor: not-allowed; }
+</style>
+
+</head>
+<body>
+  <!-- Login / first admin -->
+  <section id="auth" class="auth hidden">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="brand-icon">🍛</div>
+        <h1 id="authTitle">Mess Meal Manager</h1>
+        <p class="muted" id="authSub">Mess Meal Manager</p>
+      </div>
+
+      <form id="loginForm" class="stack hidden" autocomplete="on">
+        <label>Username<input name="username" required autocomplete="username" autocapitalize="none"></label>
+        <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
+        <button class="btn primary block" type="submit">Log in</button>
+        <p class="muted small center">Forgot your password? Ask the admin to reset it.</p>
+      </form>
+
+      <form id="setupForm" class="stack hidden">
+        <div class="note">First time here — create the admin account</div>
+        <label>Mess name<input name="messName" required placeholder="e.g. House 12 Mess"></label>
+        <label>Your name<input name="name" required></label>
+        <label>Username<input name="username" required autocapitalize="none" placeholder="e.g. admin"></label>
+        <label>Password<input name="password" type="password" required minlength="4"></label>
+        <button class="btn primary block" type="submit">Create admin</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Main app -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <button class="icon-btn" data-act="menu" aria-label="Menu">☰</button>
+      <div class="topbar-title">
+        <strong id="messName">Mess Meal Manager</strong>
+        <span id="pageTitle" class="muted small"></span>
+      </div>
+      <button class="user-chip" data-act="go" data-page="profile">
+        <span id="userName"></span>
+        <span id="userRole" class="badge"></span>
+      </button>
+    </header>
+
+    <aside id="drawer" class="drawer">
+      <div class="drawer-head">
+        <strong>Menu</strong>
+        <button class="icon-btn" data-act="menu-close" aria-label="Close">✕</button>
+      </div>
+      <nav id="drawerNav"></nav>
+      <button class="btn ghost block" data-act="logout">🚪 Log out</button>
+    </aside>
+    <div id="scrim" class="scrim" data-act="menu-close"></div>
+
+    <main id="view" class="view"></main>
+
+    <nav id="bottomNav" class="bottom-nav"></nav>
+  </div>
+
+  <!-- Dialog -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <strong id="modalTitle"></strong>
+        <button class="icon-btn" data-act="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="loader" class="loader hidden"><div class="spinner"></div></div>
+  <div id="toasts" class="toasts"></div>
+
+  <script>
+/* ================= State and helpers ================= */
+const ROLE_LABEL = { admin: 'Admin', manager: 'Manager', member: 'Member' };
+const ALL = ['admin', 'manager', 'member'], MGR = ['admin', 'manager'], ADM = ['admin'];
+
+const S = { token: null, user: null, settings: {}, appUrl: '', page: 'home', params: {}, users: null, month: null, date: null };
+const PAGES = {};   // pages are added in JsPages / JsManage
+const ACT = {};     // click handlers for data-act="..."
+const CHG = {};     // change handlers for data-chg="..."
+
+const $ = (sel, root) => (root || document).querySelector(sel);
+const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+};
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = n => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const tk = n => '৳' + num(n);
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const todayStr = () => ymd(new Date());
+const thisMonth = () => todayStr().slice(0, 7);
+const addDays = (s, n) => { const p = s.split('-').map(Number); return ymd(new Date(p[0], p[1] - 1, p[2] + n)); };
+const shiftMonth = (m, n) => { const p = m.split('-').map(Number); const d = new Date(p[0], p[1] - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
+const fmtDate = (s, opt) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB', opt || { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+const fmtMonth = m => new Date(m + '-01T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+const isMgr = () => !!S.user && S.user.role !== 'member';
+const isAdmin = () => !!S.user && S.user.role === 'admin';
+const signed = n => (n >= 0 ? '+' : '−') + tk(Math.abs(n));
+const balClass = n => n >= 0 ? 'pos' : 'neg';
+const plural = (n, word) => num(n) + ' ' + word + (Number(n) === 1 ? '' : 's');
+
+/* ================= API ================= */
+let loadCount = 0;
+function loading(on) {
+  loadCount = Math.max(0, loadCount + (on ? 1 : -1));
+  $('#loader').classList.toggle('hidden', loadCount === 0);
+}
+
+/**
+ * Sends a request to the server. Inside Apps Script it uses google.script.run;
+ * on a separate website (e.g. Vercel) it uses fetch to window.MESS_API_URL (doPost).
+ */
+function transport(action, data) {
+  if (window.google && google.script && google.script.run) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(action, S.token, data);
+    });
+  }
+  if (!window.MESS_API_URL || window.MESS_API_URL.indexOf('/exec') === -1) {
+    return Promise.reject(new Error('API URL is not set — put your Apps Script Web App URL in config.js'));
+  }
+  // A text/plain body is a "simple request", so no CORS preflight is needed
+  return fetch(window.MESS_API_URL, { method: 'POST', body: JSON.stringify({ action: action, token: S.token, data: data }) })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+}
+
+function call(action, data, opts) {
+  opts = opts || {};
+  if (!opts.silent) loading(true);
+  return transport(action, data || {}).then(res => {
+    if (!opts.silent) loading(false);
+    if (res && res.ok) return res.data;
+    const msg = (res && res.error) || 'Something went wrong';
+    if (msg.indexOf('AUTH:') === 0) {
+      const wasIn = !!S.user;
+      clearSession();
+      if (wasIn) { toast(msg.slice(5).trim(), 'err'); showAuth(); }
+      throw new Error('auth');
+    }
+    toast(msg, 'err');
+    throw new Error(msg);
+  }, err => {
+    if (!opts.silent) loading(false);
+    toast(err && err.message && err.message.indexOf('config.js') > -1 ? err.message : 'Could not reach the server. Check your internet and try again.', 'err');
+    throw err;
+  });
+}
+
+async function getUsers(force) {
+  if (!S.users || force) S.users = await call('users.list');
+  return S.users;
+}
+function userOptions(users, selected, emptyLabel) {
+  return (emptyLabel ? `<option value="">${esc(emptyLabel)}</option>` : '') +
+    users.filter(u => u.active === '1' || u.id === selected)
+      .map(u => `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc(u.name)}${u.room ? ' (' + esc(u.room) + ')' : ''}</option>`).join('');
+}
+
+/* ================= UI: toast, modal ================= */
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type || '');
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), type === 'err' ? 5000 : 3000);
+}
+
+function formData(form) {
+  const o = {};
+  new FormData(form).forEach((v, k) => {
+    if (v instanceof File) return;
+    if (o[k] !== undefined) o[k] = [].concat(o[k], v); else o[k] = v;
+  });
+  $$('input[type="checkbox"]', form).forEach(c => { if (!c.name.endsWith('[]')) o[c.name] = c.checked; });
+  return o;
+}
+
+/** onSubmit(data, form) — return true to keep the dialog open */
+function openModal(title, html, onSubmit) {
+  $('#modalTitle').textContent = title;
+  $('#modalBody').innerHTML = html;
+  $('#modal').classList.remove('hidden');
+  const form = $('#modalBody form');
+  if (form && onSubmit) {
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const btn = $('button[type="submit"]', form);
+      if (btn) btn.disabled = true;
+      try {
+        const keep = await onSubmit(formData(form), form);
+        if (keep !== true) closeModal();
+      } catch (err) { /* already shown as a toast */ }
+      if (btn) btn.disabled = false;
+    };
+    const first = $('input:not([type="hidden"]), select, textarea', form);
+    if (first && window.innerWidth > 640) first.focus();
+  }
+}
+function closeModal() { $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; }
+
+function confirmBox(msg, okText) {
+  return new Promise(resolve => {
+    openModal('Please confirm', `<form class="stack"><p>${esc(msg)}</p>
+      <div class="row"><button type="button" class="btn" data-act="modal-close">No</button>
+      <button type="submit" class="btn danger">${esc(okText || 'Yes')}</button></div></form>`, () => { resolve(true); });
+    const obs = new MutationObserver(() => { if ($('#modal').classList.contains('hidden')) { obs.disconnect(); resolve(false); } });
+    obs.observe($('#modal'), { attributes: true });
+  });
+}
+
+/* ================= Share login details ================= */
+function appLink() {
+  return window.MESS_API_URL ? location.origin + location.pathname : (S.appUrl || '');
+}
+
+/** After adding a member or resetting a password: copy or send the details on WhatsApp */
+function shareLogin(name, username, password) {
+  const link = appLink();
+  const msg = `Hi ${name}, here is your login for ${S.settings.messName || 'our mess'}:\n` +
+    (link ? `Link: ${link}\n` : '') + `Username: ${username}\nPassword: ${password}\n` +
+    `You can change your password from Profile after logging in.`;
+  openModal('Share login details', `<div class="stack">
+      <p class="small muted" style="margin:0">Send this to ${esc(name)} so they can log in.</p>
+      <textarea id="shareText" rows="6" readonly>${esc(msg)}</textarea>
+      <div class="row">
+        <button class="btn" data-act="copy-share">📋 Copy</button>
+        <a class="btn ok" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
+      </div></div>`);
+}
+
+ACT['copy-share'] = () => {
+  const t = $('#shareText');
+  t.select();
+  const done = () => toast('Copied', 'ok');
+  const fallback = () => { try { document.execCommand('copy'); done(); } catch (e) { toast('Select the text and copy it manually', 'err'); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(done, fallback);
+  else fallback();
+};
+
+/* ================= Photos ================= */
+function compressImage(file, max, quality) {
+  max = max || 1400; quality = quality || 0.75;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the photo'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('This photo cannot be opened, please choose another one'));
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        const url = c.toDataURL('image/jpeg', quality);
+        resolve({ data: url.split(',')[1], mime: 'image/jpeg', preview: url });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/** The compressed photo from a form's file field (or null) */
+async function imageFromForm(form) {
+  const input = $('input[type="file"]', form);
+  if (!input || !input.files || !input.files[0]) return null;
+  try { const img = await compressImage(input.files[0]); delete img.preview; return img; }
+  catch (e) { toast(e.message, 'err'); throw e; }
+}
+
+CHG.preview = async el => {
+  const box = $('#' + el.dataset.target);
+  if (!box) return;
+  box.innerHTML = '';
+  if (el.files && el.files[0]) {
+    try { const img = await compressImage(el.files[0], 600, 0.6); box.innerHTML = `<img class="preview" src="${img.preview}" alt="">`; }
+    catch (e) { toast(e.message, 'err'); }
+  }
+};
+
+ACT['show-image'] = async el => {
+  const src = await call('image.get', { kind: el.dataset.kind, id: el.dataset.id });
+  openModal('Memo photo', `<img class="memo" src="${src}" alt="Memo">`);
+};
+
+/* ================= Navigation ================= */
+const NAV_ORDER = ['home', 'mymeal', 'daymeal', 'memo', 'expense', 'deposit', 'duty', 'report', 'users', 'settings', 'profile'];
+
+function allowed(page) { return PAGES[page] && PAGES[page].roles.indexOf(S.user.role) > -1; }
+
+function renderNav() {
+  const pages = NAV_ORDER.filter(allowed);
+  $('#drawerNav').innerHTML = pages.map(p =>
+    `<a data-act="go" data-page="${p}" class="${S.page === p ? 'active' : ''}"><span>${PAGES[p].icon}</span>${PAGES[p].title}</a>`).join('');
+
+  const bottom = (isMgr() ? ['home', 'daymeal', 'memo', 'report'] : ['home', 'mymeal', 'memo', 'duty']).filter(allowed);
+  $('#bottomNav').innerHTML = bottom.map(p =>
+    `<a data-act="go" data-page="${p}" class="${S.page === p ? 'active' : ''}"><span class="ico">${PAGES[p].icon}</span>${PAGES[p].short || PAGES[p].title}
+     ${p === 'memo' && S.pendingMemos ? `<span class="dot">${num(S.pendingMemos)}</span>` : ''}</a>`).join('') +
+    `<a data-act="menu"><span class="ico">☰</span>More</a>`;
+}
+
+async function go(page, params) {
+  if (!allowed(page)) page = 'home';
+  S.page = page;
+  S.params = params || {};
+  store.set('page', page);
+  $('#pageTitle').textContent = PAGES[page].title;
+  renderNav();
+  closeDrawer();
+  const view = $('#view');
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  window.scrollTo(0, 0);
+  try { await PAGES[page].render(view, S.params); }
+  catch (e) { if (S.page === page && e.message !== 'auth') view.innerHTML = `<div class="empty">${esc(e.message || 'Could not load')}<br><br><button class="btn" data-act="reload">Try again</button></div>`; }
+}
+const refresh = () => go(S.page, S.params);
+
+function openDrawer() { $('#drawer').classList.add('open'); $('#scrim').classList.add('open'); }
+function closeDrawer() { $('#drawer').classList.remove('open'); $('#scrim').classList.remove('open'); }
+
+/** Month switcher (‹ October 2026 ›) */
+function monthNav() {
+  S.month = S.month || thisMonth();
+  return `<div class="switcher"><button class="btn sm" data-act="month-shift" data-n="-1">‹</button>
+    <strong>${fmtMonth(S.month)}</strong>
+    <button class="btn sm" data-act="month-shift" data-n="1">›</button></div>`;
+}
+
+ACT.go = el => go(el.dataset.page, el.dataset.id ? { id: el.dataset.id } : null);
+ACT.menu = openDrawer;
+ACT['menu-close'] = closeDrawer;
+ACT['modal-close'] = closeModal;
+ACT.reload = refresh;
+ACT.logout = () => { clearSession(); showAuth(); };
+ACT['month-shift'] = el => { S.month = shiftMonth(S.month || thisMonth(), Number(el.dataset.n)); refresh(); };
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el || !ACT[el.dataset.act]) return;
+  e.preventDefault();
+  Promise.resolve().then(() => ACT[el.dataset.act](el, e)).catch(() => { /* already shown as a toast */ });
+});
+document.addEventListener('change', e => {
+  const el = e.target.closest('[data-chg]');
+  if (el && CHG[el.dataset.chg]) Promise.resolve().then(() => CHG[el.dataset.chg](el, e)).catch(() => {});
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeDrawer(); } });
+
+/* ================= Login ================= */
+function clearSession() { store.set('token', null); S.token = null; S.user = null; S.users = null; }
+
+function startApp(res) {
+  if (res.token) { S.token = res.token; store.set('token', res.token); }
+  S.user = res.user;
+  S.settings = res.settings || {};
+  S.appUrl = res.appUrl || S.appUrl;
+  S.month = thisMonth();
+  $('#messName').textContent = document.title = S.settings.messName || 'Mess Meal Manager';
+  $('#userName').textContent = S.user.name;
+  $('#userRole').textContent = ROLE_LABEL[S.user.role];
+  $('#auth').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  go(store.get('page') || 'home');
+}
+
+async function showAuth() {
+  $('#app').classList.add('hidden');
+  $('#auth').classList.remove('hidden');
+  $('#loginForm').classList.add('hidden');
+  $('#setupForm').classList.add('hidden');
+  const st = await call('auth.status');
+  if (st.messName) $('#authTitle').textContent = document.title = st.messName;
+  $(st.needsSetup ? '#setupForm' : '#loginForm').classList.remove('hidden');
+}
+
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try { startApp(await call('auth.login', formData(e.target))); e.target.reset(); } catch (err) { /* toast */ }
+});
+$('#setupForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    startApp(await call('auth.setupAdmin', formData(e.target)));
+    toast('Welcome! Next, add your members from "Members & roles".', 'ok');
+  } catch (err) { /* toast */ }
+});
+
+window.addEventListener('load', async () => {
+  S.token = store.get('token');
+  if (S.token) {
+    try { return startApp(await call('me.get')); } catch (e) { clearSession(); }
+  }
+  showAuth().catch(() => {});
+});
+</script>
+
+  <script>
+/* =========================================================
+   Pages for everyone: Home, My meals, Memos, Duties, Report, Profile
+   ========================================================= */
+
+const DUTY_LABEL = { bazar: 'Bazar', clean: 'Cleaning' };
+const DUTY_ICON = { bazar: '🛒', clean: '🚿' };
+const DUTY_STATUS = { pending: ['Pending', 'warn'], done: ['Done', 'ok'], missed: ['Missed', 'danger'] };
+const MEMO_STATUS = { pending: ['Pending', 'warn'], approved: ['Approved', 'ok'], rejected: ['Rejected', 'danger'] };
+const badge = (map, key) => `<span class="badge ${(map[key] || [])[1] || 'gray'}">${(map[key] || [key])[0]}</span>`;
+const SLOT = { lunch: '☀️ Lunch', dinner: '🌙 Dinner' };
+
+function dutyItem(t) {
+  const mine = S.user && t.userId === S.user.id;
+  const actions = [];
+  if (t.status === 'pending' && (mine || isMgr())) actions.push(`<button class="btn sm ok" data-act="duty-done" data-id="${t.id}">✓ Done</button>`);
+  if (isMgr() && S.page === 'duty') actions.push(`<button class="btn sm" data-act="duty-edit" data-id="${t.id}">✎</button>`);
+  return `<div class="item">
+    <div class="duty-ico ${t.type}">${DUTY_ICON[t.type]}</div>
+    <div class="grow">
+      <div class="title">${esc(t.name)}${mine ? ' <span class="badge">Me</span>' : ''}</div>
+      <div class="sub">${fmtDate(t.date)} · ${DUTY_LABEL[t.type]}${t.area ? ' (' + esc(t.area) + ')' : ''}${t.note ? ' · ' + esc(t.note) : ''}</div>
+    </div>
+    ${badge(DUTY_STATUS, t.status)} ${actions.join(' ')}
+  </div>`;
+}
+
+ACT['duty-done'] = async el => {
+  await call('duties.status', { id: el.dataset.id, status: 'done' });
+  toast('Duty marked as done', 'ok');
+  refresh();
+};
+
+/* ---------------- Home ---------------- */
+function quickMeals() {
+  const st = S.quick;
+  return st.days.map((d, i) => `
+    <div class="day">${i === 0 ? 'Today' : 'Tomorrow'}<div class="small muted">${fmtDate(d.date, { day: 'numeric', month: 'short' })}</div></div>
+    ${['lunch', 'dinner'].map(slot => {
+      const v = d[slot], locked = slot === 'lunch' ? d.lockLunch : d.lockDinner;
+      const label = v > 1 ? `ON · ${v}` : v ? 'ON' : 'OFF';
+      return `<button class="qbtn ${v ? 'on' : ''} ${locked ? 'locked' : ''}" data-act="quick-meal" data-i="${i}" data-slot="${slot}" ${locked ? 'disabled' : ''}>
+        <span>${SLOT[slot]}</span><small>${locked ? '🔒 ' : ''}${label}</small></button>`;
+    }).join('')}`).join('');
+}
+
+PAGES.home = {
+  title: 'Home', icon: '🏠', roles: ALL,
+  async render(v) {
+    const d = await call('dashboard');
+    S.pendingMemos = d.pendingMemos;
+    S.quick = d.myMeals;
+    renderNav();
+    const m = d.mine;
+    v.innerHTML = `
+      <div class="card">
+        <div class="card-head"><h3>My meals</h3>
+          <button class="btn sm" data-act="go" data-page="mymeal">More days</button></div>
+        <div class="quick" id="quickBox">${quickMeals()}</div>
+        <p class="small muted" style="margin:10px 0 0">Tap to switch on/off. Today's lunch closes at ${esc(S.quick.lunchCutoff)}, dinner at ${esc(S.quick.dinnerCutoff)}.</p>
+      </div>
+
+      <div class="stats">
+        <div class="stat hl"><div class="lbl">Meal rate (this month)</div><div class="val">${tk(d.month.mealRate)}</div></div>
+        <div class="stat"><div class="lbl">My meals</div><div class="val">${num(m.meals)}</div></div>
+        <div class="stat"><div class="lbl">My cost</div><div class="val">${tk(m.totalCost)}</div></div>
+        <div class="stat"><div class="lbl">My balance</div><div class="val ${balClass(m.balance)}">${signed(m.balance)}</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Mess meals today · ${fmtDate(d.today)}</h3>
+          ${isMgr() ? '<button class="btn sm" data-act="go" data-page="daymeal">Edit</button>' : ''}</div>
+        <div class="grid2">
+          <div class="stat"><div class="lbl">☀️ Lunch</div><div class="val">${num(d.todayMeals.lunch)}</div></div>
+          <div class="stat"><div class="lbl">🌙 Dinner</div><div class="val">${num(d.todayMeals.dinner)}</div></div>
+        </div>
+        <p class="small muted" style="margin:10px 0 0">Tomorrow: lunch ${num(d.tomorrowMeals.lunch)} · dinner ${num(d.tomorrowMeals.dinner)}</p>
+      </div>
+
+      ${d.pendingMemos && isMgr() ? `<div class="card note row"><span>📄 ${plural(d.pendingMemos, 'bazar memo')} waiting for review</span>
+        <button class="btn sm primary" style="flex:none" data-act="go" data-page="memo">Review</button></div>` : ''}
+
+      <div class="card">
+        <div class="card-head"><h3>Duties — next 7 days</h3><button class="btn sm" data-act="go" data-page="duty">See all</button></div>
+        <div class="list">${d.duties.length ? d.duties.map(dutyItem).join('') : '<div class="empty">No duties</div>'}</div>
+      </div>
+
+      <div class="card">
+        <h3>This month at a glance</h3>
+        <div class="list">
+          <div class="item"><span class="grow">Total meals</span><span class="amount">${num(d.month.totalMeals)}</span></div>
+          <div class="item"><span class="grow">Total bazar</span><span class="amount">${tk(d.month.totalBazar)}</span></div>
+          <div class="item"><span class="grow">Shared costs</span><span class="amount">${tk(d.month.totalShared)}</span></div>
+          <div class="item"><span class="grow">Total deposits</span><span class="amount">${tk(d.month.totalDeposit)}</span></div>
+          <div class="item"><span class="grow">Cash with manager</span><span class="amount ${balClass(d.month.cashInHand)}">${tk(d.month.cashInHand)}</span></div>
+        </div>
+      </div>`;
+  }
+};
+
+ACT['quick-meal'] = async el => {
+  const day = S.quick.days[Number(el.dataset.i)];
+  const slot = el.dataset.slot;
+  const payload = { date: day.date };
+  payload[slot] = day[slot] ? 0 : 1;
+  Object.assign(day, await call('meals.setMy', payload));
+  $('#quickBox').innerHTML = quickMeals();
+  toast(`${fmtDate(day.date)} — ${slot} ${day[slot] ? 'ON' : 'OFF'}`, 'ok');
+};
+
+/* ---------------- My meals ---------------- */
+function stepper(act, date, slot, val, locked, max) {
+  return `<div class="slot">${SLOT[slot]}
+    <div class="stepper ${val > 0 ? 'on' : ''} ${locked ? 'locked' : ''}">
+      <button data-act="${act}" data-date="${date}" data-slot="${slot}" data-n="-1" ${locked || val <= 0 ? 'disabled' : ''}>−</button>
+      <span class="v">${locked ? '🔒' : ''}${num(val)}</span>
+      <button data-act="${act}" data-date="${date}" data-slot="${slot}" data-n="1" ${locked || val >= max ? 'disabled' : ''}>+</button>
+    </div></div>`;
+}
+
+function myMealRows() {
+  const st = S.myMeals;
+  return st.days.map(d => `<div class="meal-day ${d.date === st.today ? 'today' : ''}">
+      <div class="d"><strong>${fmtDate(d.date)}</strong>
+        <span class="small muted">${d.date === st.today ? 'Today' : d.date === addDays(st.today, 1) ? 'Tomorrow' : ''}
+        ${d.isDefault ? '<span class="badge gray">Default</span>' : ''}</span></div>
+      ${stepper('meal-step', d.date, 'lunch', d.lunch, d.lockLunch, st.maxGuestMeal)}
+      ${stepper('meal-step', d.date, 'dinner', d.dinner, d.lockDinner, st.maxGuestMeal)}
+    </div>`).join('');
+}
+
+PAGES.mymeal = {
+  title: 'My meals', short: 'My meals', icon: '🍽️', roles: ALL,
+  async render(v, p) {
+    const from = p.from || todayStr();
+    S.myMeals = await call('meals.my', { from: from, to: addDays(from, 6) });
+    const st = S.myMeals;
+    v.innerHTML = `
+      <div class="card">
+        <div class="card-head"><h3>Which meals will you eat?</h3>
+          <button class="btn sm primary" data-act="meal-range">Many days at once</button></div>
+        <p class="small muted" style="margin-top:0">Today's lunch can be changed until <b>${esc(st.lunchCutoff)}</b> and dinner until
+          <b>${esc(st.dinnerCutoff)}</b>. Have a guest? Press + to add a meal.</p>
+        <div class="switcher">
+          <button class="btn sm" data-act="meal-week" data-n="-7">‹ Prev</button>
+          <strong>${fmtDate(st.days[0].date, { day: 'numeric', month: 'short' })} – ${fmtDate(st.days[6].date, { day: 'numeric', month: 'short' })}</strong>
+          <button class="btn sm" data-act="meal-week" data-n="7">Next ›</button>
+        </div>
+        <div id="myMealList">${myMealRows()}</div>
+      </div>
+      <div class="card">
+        <h3>Default meals</h3>
+        <p class="small muted" style="margin-top:0">When on, your meal is added automatically every day — you only switch it off on days you won't eat.</p>
+        <form id="prefsForm" class="row">
+          <label class="check"><input type="checkbox" name="autoLunch" ${st.autoLunch === '1' ? 'checked' : ''}> ☀️ Lunch</label>
+          <label class="check"><input type="checkbox" name="autoDinner" ${st.autoDinner === '1' ? 'checked' : ''}> 🌙 Dinner</label>
+          <button class="btn" type="submit" style="flex:none">Save</button>
+        </form>
+      </div>`;
+    $('#prefsForm').onsubmit = async e => {
+      e.preventDefault();
+      const user = await call('me.prefs', formData(e.target)).catch(() => null);
+      if (!user) return;
+      S.user = user;
+      toast('Default meals saved', 'ok');
+      refresh();
+    };
+  }
+};
+
+ACT['meal-week'] = el => {
+  const base = S.params.from || todayStr();
+  go('mymeal', { from: addDays(base, Number(el.dataset.n)) });
+};
+
+ACT['meal-step'] = async el => {
+  const st = S.myMeals;
+  const day = st.days.filter(d => d.date === el.dataset.date)[0];
+  const slot = el.dataset.slot;
+  const next = Math.max(0, Math.min(st.maxGuestMeal, day[slot] + Number(el.dataset.n)));
+  const payload = { date: day.date };
+  payload[slot] = next;
+  Object.assign(day, await call('meals.setMy', payload));
+  $('#myMealList').innerHTML = myMealRows();
+  toast(`${fmtDate(day.date)} — ${slot}: ${plural(next, 'meal')}`, 'ok');
+};
+
+ACT['meal-range'] = () => {
+  const opts = `<option value="">No change</option><option value="1">On (1 meal)</option><option value="0">Off</option>`;
+  openModal('Meals for many days', `<form class="stack">
+      <div class="grid2">
+        <label>From<input type="date" name="from" value="${todayStr()}" required></label>
+        <label>To<input type="date" name="to" value="${addDays(todayStr(), 4)}" required></label>
+      </div>
+      <div class="grid2">
+        <label>☀️ Lunch<select name="lunch">${opts}</select></label>
+        <label>🌙 Dinner<select name="dinner">${opts}</select></label>
+      </div>
+      <p class="small muted">Example: going home — set both to "Off". Meals whose time has passed won't change.</p>
+      <button class="btn primary" type="submit">Save</button></form>`, async data => {
+    const res = await call('meals.setMyRange', data);
+    toast(`${plural(res.changed, 'day')} updated` + (res.skipped ? ` (${plural(res.skipped, 'meal')} already closed)` : ''), 'ok');
+    refresh();
+  });
+};
+
+/* ---------------- Memos ---------------- */
+PAGES.memo = {
+  title: 'Bazar memos', short: 'Memos', icon: '🧾', roles: ALL,
+  async render(v, p) {
+    const status = p.status === undefined ? (isMgr() ? 'pending' : '') : p.status;
+    const list = await call('memos.list', { month: S.month || thisMonth(), status: status });
+    const total = list.reduce((s, m) => s + Number(m.amount), 0);
+    v.innerHTML = `
+      <div class="toolbar">
+        <button class="btn primary" data-act="memo-new">📷 Upload memo</button>
+        ${isMgr() ? `<select data-chg="memo-filter" style="flex:1">
+          <option value="pending" ${status === 'pending' ? 'selected' : ''}>Pending</option>
+          <option value="" ${status === '' ? 'selected' : ''}>All memos</option>
+          <option value="approved" ${status === 'approved' ? 'selected' : ''}>Approved</option>
+          <option value="rejected" ${status === 'rejected' ? 'selected' : ''}>Rejected</option></select>` : ''}
+      </div>
+      ${monthNav()}
+      <div class="card">
+        <div class="card-head"><h3>${plural(list.length, 'memo')}</h3><span class="amount">${tk(total)}</span></div>
+        <div class="list">${list.length ? list.map(memoItem).join('') : '<div class="empty">No memos this month</div>'}</div>
+      </div>`;
+  }
+};
+
+function memoItem(m) {
+  const mine = m.userId === S.user.id;
+  const btns = [];
+  if (m.hasImage) btns.push(`<button class="btn sm" data-act="show-image" data-kind="memo" data-id="${m.id}">🖼️ Photo</button>`);
+  if (isMgr() && m.status === 'pending') btns.push(`<button class="btn sm primary" data-act="memo-review" data-id="${m.id}">Review</button>`);
+  if (m.status !== 'approved' && (isMgr() || (mine && m.status === 'pending'))) btns.push(`<button class="btn sm danger" data-act="memo-delete" data-id="${m.id}">Delete</button>`);
+  return `<div class="item" style="flex-wrap:wrap">
+    <div class="grow">
+      <div class="title">${esc(m.name)} · ${tk(m.amount)}</div>
+      <div class="sub">${fmtDate(m.date)}${m.note ? ' · ' + esc(m.note) : ''}${m.reviewedByName ? ' · reviewed by ' + esc(m.reviewedByName) : ''}</div>
+    </div>
+    ${badge(MEMO_STATUS, m.status)}
+    <div class="row" style="flex:0 0 100%;justify-content:flex-end">${btns.map(b => `<span style="flex:none">${b}</span>`).join('')}</div>
+  </div>`;
+}
+
+CHG['memo-filter'] = el => go('memo', { status: el.value });
+
+ACT['memo-new'] = () => {
+  openModal('Upload bazar memo', `<form class="stack">
+      <label>Bazar date<input type="date" name="date" value="${todayStr()}" required></label>
+      <label>Total amount<input type="number" name="amount" min="1" step="0.01" inputmode="decimal" required></label>
+      <label>What did you buy? (optional)<textarea name="note" placeholder="Rice, lentils, fish..."></textarea></label>
+      <label>Memo photo<input type="file" accept="image/*" data-chg="preview" data-target="memoPrev" required></label>
+      <div id="memoPrev"></div>
+      <button class="btn primary" type="submit">Upload</button></form>`, async (data, form) => {
+    data.image = await imageFromForm(form);
+    if (!data.image) { toast('Add a photo of the memo', 'err'); return true; }
+    await call('memos.upload', data);
+    toast('Memo uploaded — the manager will review it', 'ok');
+    S.month = data.date.slice(0, 7);
+    go('memo', { status: isMgr() ? 'pending' : '' });
+  });
+};
+
+ACT['memo-delete'] = async el => {
+  if (!(await confirmBox('Delete this memo?', 'Delete'))) return;
+  await call('memos.delete', { id: el.dataset.id });
+  toast('Memo deleted', 'ok');
+  refresh();
+};
+
+/* ---------------- Duties ---------------- */
+PAGES.duty = {
+  title: 'Bazar & cleaning duties', short: 'Duties', icon: '🗓️', roles: ALL,
+  async render(v, p) {
+    const type = p.type || '';
+    const list = await call('duties.list', { month: S.month || thisMonth(), type: type });
+    v.innerHTML = `
+      ${isMgr() ? `<div class="toolbar">
+        <button class="btn primary" data-act="duty-new">+ Duty</button>
+        <button class="btn" data-act="duty-generate">🔁 Make a roster</button></div>` : ''}
+      ${monthNav()}
+      <div class="toolbar">
+        <select data-chg="duty-filter">
+          <option value="" ${type === '' ? 'selected' : ''}>All duties</option>
+          <option value="bazar" ${type === 'bazar' ? 'selected' : ''}>🛒 Bazar</option>
+          <option value="clean" ${type === 'clean' ? 'selected' : ''}>🚿 Washroom cleaning</option>
+        </select>
+      </div>
+      <div class="card"><div class="list">${list.length ? list.map(dutyItem).join('') : '<div class="empty">No duties this month</div>'}</div></div>`;
+  }
+};
+CHG['duty-filter'] = el => go('duty', { type: el.value });
+
+/* ---------------- Report ---------------- */
+PAGES.report = {
+  title: 'Monthly report', short: 'Report', icon: '📊', roles: ALL,
+  async render(v, p) {
+    const r = await call('report.month', { month: S.month || thisMonth(), matrix: !!p.matrix });
+    const rows = r.members.map(m => `<tr ${m.userId === S.user.id ? 'style="background:var(--primary-soft)"' : ''}>
+        <td>${esc(m.name)}</td><td class="num">${num(m.lunch)}+${num(m.dinner)}=${num(m.meals)}</td>
+        <td class="num">${tk(m.mealCost)}</td><td class="num">${tk(m.sharedCost)}</td><td class="num">${tk(m.totalCost)}</td>
+        <td class="num">${tk(m.credit)}${m.paidBazar ? `<div class="small muted">bazar ${tk(m.paidBazar)}</div>` : ''}</td>
+        <td class="num ${balClass(m.balance)}">${signed(m.balance)}</td></tr>`).join('');
+    const sum = k => r.members.reduce((s, m) => s + Number(m[k]), 0);
+    const days = r.days.filter(d => d.lunch || d.dinner);
+
+    v.innerHTML = `
+      ${monthNav()}
+      <div class="stats">
+        <div class="stat hl"><div class="lbl">Meal rate</div><div class="val">${tk(r.mealRate)}</div></div>
+        <div class="stat"><div class="lbl">Total meals</div><div class="val">${num(r.totalMeals)}</div><div class="small muted">lunch ${num(r.totalLunch)} · dinner ${num(r.totalDinner)}</div></div>
+        <div class="stat"><div class="lbl">Total bazar</div><div class="val">${tk(r.totalBazar)}</div></div>
+        <div class="stat"><div class="lbl">Shared costs</div><div class="val">${tk(r.totalShared)}</div><div class="small muted">${tk(r.sharedEach)} each</div></div>
+        <div class="stat"><div class="lbl">Total deposits</div><div class="val">${tk(r.totalDeposit)}</div></div>
+        <div class="stat"><div class="lbl">Spent from fund</div><div class="val">${tk(r.fundSpent)}</div></div>
+        <div class="stat"><div class="lbl">Cash with manager</div><div class="val ${balClass(r.cashInHand)}">${tk(r.cashInHand)}</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Per member</h3><button class="btn sm" data-act="print">🖨️ Print</button></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Name</th><th class="num">Meals (L+D)</th><th class="num">Meal cost</th><th class="num">Shared</th>
+            <th class="num">Total cost</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" class="empty">No data</td></tr>'}</tbody>
+          <tfoot><tr><td>Total</td><td class="num">${num(r.totalMeals)}</td><td class="num">${tk(sum('mealCost'))}</td><td class="num">${tk(sum('sharedCost'))}</td>
+            <td class="num">${tk(sum('totalCost'))}</td><td class="num">${tk(sum('credit'))}</td><td class="num">${signed(sum('balance'))}</td></tr></tfoot>
+        </table></div>
+        <p class="small muted">Balance + means the member gets money back, − means they still have to pay. "Paid" includes bazar done with their own money.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Meals by day</h3>
+          <button class="btn sm" data-act="report-matrix">${p.matrix ? 'Summary' : '📋 Full meal sheet'}</button></div>
+        ${p.matrix ? mealSheet(r) : `<div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th class="num">☀️ Lunch</th><th class="num">🌙 Dinner</th><th class="num">Total</th></tr></thead>
+          <tbody>${days.map(d => `<tr><td>${fmtDate(d.date)}</td><td class="num">${num(d.lunch)}</td><td class="num">${num(d.dinner)}</td><td class="num">${num(d.lunch + d.dinner)}</td></tr>`).join('') ||
+            '<tr><td colspan="4" class="empty">No meals yet</td></tr>'}</tbody></table></div>`}
+      </div>`;
+  }
+};
+
+function mealSheet(r) {
+  const head = r.days.map(d => `<th>${Number(d.date.slice(8))}</th>`).join('');
+  const body = r.members.map(m => {
+    const row = (r.matrix || {})[m.userId] || {};
+    return `<tr><td>${esc(m.name)}</td>${r.days.map(d => {
+      const c = row[d.date];
+      return `<td>${c ? c[0] + '/' + c[1] : '<span class="muted">–</span>'}</td>`;
+    }).join('')}<td><b>${num(m.meals)}</b></td></tr>`;
+  }).join('');
+  return `<p class="small muted" style="margin-top:0">Each cell is lunch/dinner</p>
+    <div class="table-wrap"><table class="sheet"><thead><tr><th>Name</th>${head}<th>Total</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+ACT['report-matrix'] = () => go('report', S.params.matrix ? {} : { matrix: 1 });
+ACT.print = () => window.print();
+
+/* ---------------- Profile ---------------- */
+PAGES.profile = {
+  title: 'Profile', icon: '👤', roles: ALL,
+  async render(v) {
+    const u = S.user;
+    v.innerHTML = `
+      <div class="card">
+        <h3>${esc(u.name)} <span class="badge">${ROLE_LABEL[u.role]}</span></h3>
+        <div class="list">
+          <div class="item"><span class="grow muted">Username</span><span>${esc(u.username)}</span></div>
+          <div class="item"><span class="grow muted">Room</span><span>${esc(u.room || '—')}</span></div>
+          <div class="item"><span class="grow muted">Phone</span><span>${esc(u.phone || '—')}</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Change password</h3>
+        <form id="pwForm" class="stack">
+          <label>Current password<input type="password" name="oldPassword" required autocomplete="current-password"></label>
+          <label>New password<input type="password" name="newPassword" required minlength="4" autocomplete="new-password"></label>
+          <button class="btn primary" type="submit">Change password</button>
+        </form>
+      </div>
+      <button class="btn danger block" data-act="logout">🚪 Log out</button>`;
+    $('#pwForm').onsubmit = async e => {
+      e.preventDefault();
+      const res = await call('me.password', formData(e.target)).catch(() => null);
+      if (!res) return;
+      S.token = res.token;
+      store.set('token', res.token);
+      e.target.reset();
+      toast('Password changed', 'ok');
+    };
+  }
+};
+</script>
+
+  <script>
+/* =========================================================
+   Manager & admin: daily meal entry, expenses, deposits,
+   memo review, duty roster, members and settings
+   ========================================================= */
+
+/* ---------------- Daily meal entry ---------------- */
+function dayMealBody() {
+  const st = S.day;
+  let l = 0, d = 0;
+  st.rows.forEach(r => { l += r.lunch; d += r.dinner; });
+  return `<div class="list">${st.rows.map(r => `<div class="meal-day">
+      <div class="d"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.room || '')}
+        ${r.isDefault && !st.dirty ? '<span class="badge gray">Default</span>' : ''}</span></div>
+      ${stepper('day-step', r.userId, 'lunch', r.lunch, false, 20)}
+      ${stepper('day-step', r.userId, 'dinner', r.dinner, false, 20)}
+    </div>`).join('') || '<div class="empty">No active members</div>'}</div>
+    <div class="grid2" style="margin-top:12px">
+      <div class="stat hl"><div class="lbl">☀️ Lunch total</div><div class="val">${num(l)}</div></div>
+      <div class="stat hl"><div class="lbl">🌙 Dinner total</div><div class="val">${num(d)}</div></div>
+    </div>`;
+}
+
+PAGES.daymeal = {
+  title: 'Meal entry (by day)', short: 'Meal entry', icon: '📝', roles: MGR,
+  async render(v) {
+    S.date = S.date || todayStr();
+    S.day = await call('meals.day', { date: S.date });
+    S.day.dirty = false;
+    v.innerHTML = `
+      <div class="card">
+        <div class="switcher">
+          <button class="btn sm" data-act="day-shift" data-n="-1">‹</button>
+          <input type="date" value="${S.date}" data-chg="day-pick" style="flex:1">
+          <button class="btn sm" data-act="day-shift" data-n="1">›</button>
+        </div>
+        <p class="small muted center" style="margin:0">${fmtDate(S.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <button class="btn sm" data-act="day-all" data-slot="lunch" data-v="1">All lunch ✓</button>
+          <button class="btn sm" data-act="day-all" data-slot="dinner" data-v="1">All dinner ✓</button>
+          <button class="btn sm danger" data-act="day-all" data-slot="both" data-v="0">All off</button>
+        </div>
+        <div id="dayBody">${dayMealBody()}</div>
+        <button class="btn primary block" style="margin-top:12px" data-act="day-save">💾 Save</button>
+      </div>`;
+  }
+};
+
+ACT['day-shift'] = el => { S.date = addDays(S.date, Number(el.dataset.n)); refresh(); };
+CHG['day-pick'] = el => { if (el.value) { S.date = el.value; refresh(); } };
+ACT['day-step'] = el => {
+  const r = S.day.rows.filter(x => x.userId === el.dataset.date)[0];   // here data-date carries the userId
+  r[el.dataset.slot] = Math.max(0, Math.min(20, r[el.dataset.slot] + Number(el.dataset.n)));
+  S.day.dirty = true;
+  $('#dayBody').innerHTML = dayMealBody();
+};
+ACT['day-all'] = el => {
+  const v = Number(el.dataset.v), slot = el.dataset.slot;   // lunch | dinner | both
+  S.day.rows.forEach(r => {
+    if (slot !== 'dinner') r.lunch = v;
+    if (slot !== 'lunch') r.dinner = v;
+  });
+  S.day.dirty = true;
+  $('#dayBody').innerHTML = dayMealBody();
+};
+ACT['day-save'] = async () => {
+  S.day = await call('meals.saveDay', { date: S.date, entries: S.day.rows.map(r => ({ userId: r.userId, lunch: r.lunch, dinner: r.dinner })) });
+  S.day.dirty = false;
+  $('#dayBody').innerHTML = dayMealBody();
+  toast('Meals saved for ' + fmtDate(S.date), 'ok');
+};
+
+/* ---------------- Expenses ---------------- */
+PAGES.expense = {
+  title: 'Bazar & expenses', short: 'Expenses', icon: '💸', roles: ALL,
+  async render(v) {
+    const list = await call('expenses.list', { month: S.month || thisMonth() });
+    S.expenses = list;
+    let bazar = 0, shared = 0;
+    list.forEach(e => { if (e.type === 'shared') shared += Number(e.amount); else bazar += Number(e.amount); });
+    v.innerHTML = `
+      ${isMgr() ? '<div class="toolbar"><button class="btn primary" data-act="exp-edit">+ Add expense</button></div>' : ''}
+      ${monthNav()}
+      <div class="grid2" style="margin-bottom:14px">
+        <div class="stat"><div class="lbl">🛒 Bazar (meals)</div><div class="val">${tk(bazar)}</div></div>
+        <div class="stat"><div class="lbl">🏠 Shared costs</div><div class="val">${tk(shared)}</div></div>
+      </div>
+      <div class="card"><div class="list">${list.length ? list.map(e => `<div class="item">
+        <div class="grow">
+          <div class="title">${esc(e.description || (e.type === 'shared' ? 'Shared cost' : 'Bazar'))}</div>
+          <div class="sub">${fmtDate(e.date)} · <span class="badge ${e.type === 'shared' ? 'gray' : ''}">${e.type === 'shared' ? 'Shared' : 'Bazar'}</span>
+            ${e.paidBy ? ' · paid by ' + esc(e.paidByName) : ' · from fund'}</div>
+        </div>
+        <span class="amount">${tk(e.amount)}</span>
+        ${e.hasImage ? `<button class="btn sm" data-act="show-image" data-kind="expense" data-id="${e.id}">🖼️</button>` : ''}
+        ${isMgr() ? `<button class="btn sm" data-act="exp-edit" data-id="${e.id}">✎</button>` : ''}
+      </div>`).join('') : '<div class="empty">No expenses this month</div>'}</div></div>`;
+  }
+};
+
+ACT['exp-edit'] = async el => {
+  const users = await getUsers();
+  const e = (S.expenses || []).filter(x => x.id === el.dataset.id)[0] || { date: todayStr(), type: 'bazar' };
+  openModal(e.id ? 'Edit expense' : 'New expense', `<form class="stack">
+      <div class="grid2">
+        <label>Date<input type="date" name="date" value="${e.date}" required></label>
+        <label>Type<select name="type">
+          <option value="bazar" ${e.type !== 'shared' ? 'selected' : ''}>🛒 Bazar (meals)</option>
+          <option value="shared" ${e.type === 'shared' ? 'selected' : ''}>🏠 Shared (split equally)</option></select></label>
+      </div>
+      <label>Amount<input type="number" name="amount" step="0.01" inputmode="decimal" value="${e.amount || ''}" required></label>
+      <label>Description<input name="description" value="${esc(e.description || '')}" placeholder="e.g. fish, vegetables / gas bill"></label>
+      <label>Who paid?<select name="paidBy">${userOptions(users, e.paidBy, 'Mess fund (manager)')}</select></label>
+      <p class="small muted" style="margin:-6px 0 0">If a member paid from their own pocket, choose them — it is added to what they have paid.</p>
+      <label>Memo photo (optional)<input type="file" accept="image/*" data-chg="preview" data-target="expPrev"></label>
+      <div id="expPrev"></div>
+      <div class="row">
+        ${e.id ? '<button type="button" class="btn danger" data-act="exp-delete" data-id="' + e.id + '">Delete</button>' : ''}
+        <button class="btn primary" type="submit">Save</button>
+      </div></form>`, async (data, form) => {
+    data.id = e.id || '';
+    data.image = await imageFromForm(form);
+    await call('expenses.save', data);
+    toast('Expense saved', 'ok');
+    S.month = data.date.slice(0, 7);
+    refresh();
+  });
+};
+
+ACT['exp-delete'] = async el => {
+  if (!(await confirmBox('Delete this expense?', 'Delete'))) return;
+  await call('expenses.delete', { id: el.dataset.id });
+  toast('Expense deleted', 'ok');
+  refresh();
+};
+
+/* ---------------- Deposits ---------------- */
+PAGES.deposit = {
+  title: 'Deposits', short: 'Deposits', icon: '💰', roles: ALL,
+  async render(v) {
+    const list = await call('deposits.list', { month: S.month || thisMonth() });
+    S.deposits = list;
+    const total = list.reduce((s, d) => s + Number(d.amount), 0);
+    v.innerHTML = `
+      ${isMgr() ? '<div class="toolbar"><button class="btn primary" data-act="dep-edit">+ Add deposit</button></div>' : ''}
+      ${monthNav()}
+      <div class="card">
+        <div class="card-head"><h3>${isMgr() ? 'Total deposits' : 'My deposits'}</h3><span class="amount">${tk(total)}</span></div>
+        <div class="list">${list.length ? list.map(d => `<div class="item">
+          <div class="grow"><div class="title">${esc(d.name)}</div>
+            <div class="sub">${fmtDate(d.date)}${d.note ? ' · ' + esc(d.note) : ''}</div></div>
+          <span class="amount ${d.amount < 0 ? 'neg' : ''}">${tk(d.amount)}</span>
+          ${isMgr() ? `<button class="btn sm" data-act="dep-edit" data-id="${d.id}">✎</button>` : ''}
+        </div>`).join('') : '<div class="empty">No deposits this month</div>'}</div>
+      </div>`;
+  }
+};
+
+ACT['dep-edit'] = async el => {
+  const users = await getUsers();
+  const d = (S.deposits || []).filter(x => x.id === el.dataset.id)[0] || { date: todayStr() };
+  openModal(d.id ? 'Edit deposit' : 'New deposit', `<form class="stack">
+      <label>Member<select name="userId" required>${userOptions(users, d.userId, 'Choose…')}</select></label>
+      <div class="grid2">
+        <label>Date<input type="date" name="date" value="${d.date}" required></label>
+        <label>Amount<input type="number" name="amount" step="0.01" inputmode="decimal" value="${d.amount || ''}" required></label>
+      </div>
+      <label>Note (optional)<input name="note" value="${esc(d.note || '')}" placeholder="e.g. bKash / cash"></label>
+      <p class="small muted" style="margin:-6px 0 0">To record a refund or carry over last month's due, enter a negative (−) amount.</p>
+      <div class="row">
+        ${d.id ? '<button type="button" class="btn danger" data-act="dep-delete" data-id="' + d.id + '">Delete</button>' : ''}
+        <button class="btn primary" type="submit">Save</button>
+      </div></form>`, async data => {
+    data.id = d.id || '';
+    await call('deposits.save', data);
+    toast('Deposit saved', 'ok');
+    S.month = data.date.slice(0, 7);
+    refresh();
+  });
+};
+
+ACT['dep-delete'] = async el => {
+  if (!(await confirmBox('Delete this deposit?', 'Delete'))) return;
+  await call('deposits.delete', { id: el.dataset.id });
+  toast('Deposit deleted', 'ok');
+  refresh();
+};
+
+/* ---------------- Memo review ---------------- */
+ACT['memo-review'] = async el => {
+  const list = await call('memos.list', { month: S.month || thisMonth() }, { silent: true });
+  const m = list.filter(x => x.id === el.dataset.id)[0];
+  if (!m) return;
+  const src = m.hasImage ? await call('image.get', { kind: 'memo', id: m.id }) : '';
+  openModal('Review memo — ' + m.name, `<form class="stack">
+      ${src ? `<img class="memo" src="${src}" alt="Memo">` : ''}
+      <p class="small muted" style="margin:0">${fmtDate(m.date)} · entered: ${tk(m.amount)}${m.note ? ' · ' + esc(m.note) : ''}</p>
+      <div class="grid2">
+        <label>Approved amount<input type="number" name="amount" step="0.01" value="${m.amount}" required></label>
+        <label>Type<select name="type"><option value="bazar">🛒 Bazar</option><option value="shared">🏠 Shared</option></select></label>
+      </div>
+      <label>Description<input name="description" value="${esc(m.note || 'Bazar')}"></label>
+      <label class="check"><input type="checkbox" name="paidByMember" checked> ${esc(m.name)} paid with their own money (add to what they have paid)</label>
+      <div class="row">
+        <button type="button" class="btn danger" data-act="memo-reject" data-id="${m.id}">✕ Reject</button>
+        <button type="submit" class="btn primary">✓ Approve</button>
+      </div></form>`, async data => {
+    data.id = m.id;
+    data.action = 'approve';
+    await call('memos.review', data);
+    toast('Memo approved — added to expenses', 'ok');
+    refresh();
+  });
+};
+
+ACT['memo-reject'] = async el => {
+  await call('memos.review', { id: el.dataset.id, action: 'reject' });
+  closeModal();
+  toast('Memo rejected');
+  refresh();
+};
+
+/* ---------------- Duty management ---------------- */
+ACT['duty-new'] = () => dutyForm(null);
+ACT['duty-edit'] = async el => {
+  const list = await call('duties.list', { month: S.month || thisMonth() }, { silent: true });
+  dutyForm(list.filter(t => t.id === el.dataset.id)[0]);
+};
+
+async function dutyForm(t) {
+  const users = await getUsers();
+  t = t || { type: 'bazar', date: todayStr(), status: 'pending' };
+  openModal(t.id ? 'Edit duty' : 'New duty', `<form class="stack">
+      <div class="grid2">
+        <label>Type<select name="type">
+          <option value="bazar" ${t.type === 'bazar' ? 'selected' : ''}>🛒 Bazar</option>
+          <option value="clean" ${t.type === 'clean' ? 'selected' : ''}>🚿 Cleaning</option></select></label>
+        <label>Date<input type="date" name="date" value="${t.date}" required></label>
+      </div>
+      <label>Member<select name="userId" required>${userOptions(users, t.userId, 'Choose…')}</select></label>
+      <div class="grid2">
+        <label>Area (for cleaning)<input name="area" value="${esc(t.area || '')}" placeholder="Washroom"></label>
+        <label>Status<select name="status">
+          <option value="pending" ${t.status === 'pending' ? 'selected' : ''}>Pending</option>
+          <option value="done" ${t.status === 'done' ? 'selected' : ''}>Done</option>
+          <option value="missed" ${t.status === 'missed' ? 'selected' : ''}>Missed</option></select></label>
+      </div>
+      <label>Note<input name="note" value="${esc(t.note || '')}"></label>
+      <div class="row">
+        ${t.id ? '<button type="button" class="btn danger" data-act="duty-delete" data-id="' + t.id + '">Delete</button>' : ''}
+        <button class="btn primary" type="submit">Save</button>
+      </div></form>`, async data => {
+    data.id = t.id || '';
+    await call('duties.save', data);
+    toast('Duty saved', 'ok');
+    S.month = data.date.slice(0, 7);
+    refresh();
+  });
+}
+
+ACT['duty-delete'] = async el => {
+  if (!(await confirmBox('Delete this duty?', 'Delete'))) return;
+  await call('duties.delete', { id: el.dataset.id });
+  toast('Duty deleted', 'ok');
+  refresh();
+};
+
+ACT['duty-generate'] = async () => {
+  const users = (await getUsers()).filter(u => u.active === '1');
+  const start = (S.month || thisMonth()) + '-01';
+  const end = shiftMonth(S.month || thisMonth(), 1) + '-01';
+  openModal('Make a rotating roster', `<form class="stack">
+      <div class="grid2">
+        <label>Type<select name="type"><option value="bazar">🛒 Bazar</option><option value="clean">🚿 Washroom cleaning</option></select></label>
+        <label>Every how many days<input type="number" name="every" min="1" max="31" value="1" required></label>
+      </div>
+      <div class="grid2">
+        <label>From<input type="date" name="from" value="${start}" required></label>
+        <label>To<input type="date" name="to" value="${addDays(end, -1)}" required></label>
+      </div>
+      <label>Area (for cleaning)<input name="area" placeholder="Washroom"></label>
+      <div><div class="small muted" style="margin-bottom:4px">Members (turns go in this order)</div>
+        ${users.map(u => `<label class="check"><input type="checkbox" name="userIds[]" value="${esc(u.id)}" checked> ${esc(u.name)}</label>`).join('')}</div>
+      <label class="check"><input type="checkbox" name="replace" checked> Replace pending duties of this type in these dates</label>
+      <button class="btn primary" type="submit">Make roster</button></form>`, async (data, form) => {
+    data.userIds = $$('input[name="userIds[]"]:checked', form).map(c => c.value);
+    delete data['userIds[]'];
+    const res = await call('duties.generate', data);
+    toast(plural(res.created, 'duty') + ' created', 'ok');
+    S.month = data.from.slice(0, 7);
+    go('duty', { type: data.type });
+  });
+};
+
+/* ---------------- Members (admin) ---------------- */
+PAGES.users = {
+  title: 'Members & roles', short: 'Members', icon: '👥', roles: ADM,
+  async render(v) {
+    const users = await getUsers(true);
+    v.innerHTML = `
+      <div class="toolbar"><button class="btn primary" data-act="user-edit">+ Add member</button></div>
+      <div class="card">
+        <p class="small muted" style="margin-top:0"><b>Admin</b> can do everything and sets roles · <b>Manager</b> handles meals, expenses, deposits and duties ·
+          <b>Member</b> sets own meals, uploads memos and sees the accounts.</p>
+        <div class="list">${users.map(u => `<div class="item">
+          <div class="grow">
+            <div class="title">${esc(u.name)} <span class="badge ${u.role === 'member' ? 'gray' : ''}">${ROLE_LABEL[u.role]}</span>
+              ${u.active !== '1' ? '<span class="badge danger">Inactive</span>' : ''}</div>
+            <div class="sub">@${esc(u.username)}${u.room ? ' · room ' + esc(u.room) : ''}${u.phone ? ' · ' + esc(u.phone) : ''}</div>
+          </div>
+          <button class="btn sm" data-act="user-edit" data-id="${u.id}">✎ Edit</button>
+        </div>`).join('')}</div>
+      </div>`;
+  }
+};
+
+ACT['user-edit'] = async el => {
+  const u = (await getUsers()).filter(x => x.id === el.dataset.id)[0] || { role: 'member', active: '1' };
+  const roleOpt = r => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`;
+  openModal(u.id ? 'Edit member' : 'Add member', `<form class="stack">
+      <label>Name<input name="name" value="${esc(u.name || '')}" required></label>
+      <label>Username (for login)<input name="username" value="${esc(u.username || '')}" required autocapitalize="none" placeholder="e.g. rahim or a mobile number"></label>
+      <label>${u.id ? 'New password (only to reset it)' : 'Password'}<input name="password" type="text" minlength="4" ${u.id ? '' : 'required'} autocomplete="off"></label>
+      <div class="grid2">
+        <label>Role<select name="role">${roleOpt('member')}${roleOpt('manager')}${roleOpt('admin')}</select></label>
+        <label>Status<select name="active">
+          <option value="1" ${u.active === '1' ? 'selected' : ''}>Active</option>
+          <option value="0" ${u.active !== '1' ? 'selected' : ''}>Inactive (left the mess)</option></select></label>
+      </div>
+      <div class="grid2">
+        <label>Room<input name="room" value="${esc(u.room || '')}"></label>
+        <label>Phone<input name="phone" type="tel" value="${esc(u.phone || '')}"></label>
+      </div>
+      <button class="btn primary" type="submit">Save</button></form>`, async data => {
+    data.id = u.id || '';
+    S.users = await call('users.save', data);
+    toast('Member saved', 'ok');
+    await refresh();
+    // New member or password reset: offer to send the login details (true = keep that dialog open)
+    if (data.password) { shareLogin(data.name, String(data.username).trim().toLowerCase(), data.password); return true; }
+  });
+};
+
+/* ---------------- Settings (admin) ---------------- */
+PAGES.settings = {
+  title: 'Settings', icon: '⚙️', roles: ADM,
+  async render(v) {
+    const me = await call('me.get');
+    const s = me.settings;
+    v.innerHTML = `
+      <div class="card">
+        <form id="setForm" class="stack">
+          <label>Mess name<input name="messName" value="${esc(s.messName)}" required></label>
+          <div class="grid2">
+            <label>Lunch changes close at<input type="time" name="lunchCutoff" value="${esc(s.lunchCutoff)}" required></label>
+            <label>Dinner changes close at<input type="time" name="dinnerCutoff" value="${esc(s.dinnerCutoff)}" required></label>
+          </div>
+          <label>Max meals per slot (with guests)<input type="number" name="maxGuestMeal" min="1" max="20" value="${esc(s.maxGuestMeal)}"></label>
+          <button class="btn primary" type="submit">Save</button>
+        </form>
+      </div>
+      <div class="card small muted">All data is stored in your Google Sheet (tabs Users, Meals, Expenses, Deposits, Duties, Memos, Settings).
+        Memo photos are in the "Mess Memo Images" folder in Google Drive. Do not change the sheet headers or column order.</div>`;
+    $('#setForm').onsubmit = async e => {
+      e.preventDefault();
+      const res = await call('settings.save', formData(e.target)).catch(() => null);
+      if (!res) return;
+      S.settings = res;
+      $('#messName').textContent = document.title = res.messName;
+      toast('Settings saved', 'ok');
+    };
+  }
+};
+</script>
+
+</body>
+</html>

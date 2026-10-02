@@ -1,36 +1,37 @@
 <script>
-/* ================= অবস্থা ও সহায়ক ================= */
-const ROLE_LABEL = { admin: 'অ্যাডমিন', manager: 'ম্যানেজার', member: 'সদস্য' };
+/* ================= State and helpers ================= */
+const ROLE_LABEL = { admin: 'Admin', manager: 'Manager', member: 'Member' };
 const ALL = ['admin', 'manager', 'member'], MGR = ['admin', 'manager'], ADM = ['admin'];
 
-const S = { token: null, user: null, settings: {}, page: 'home', params: {}, users: null, month: null, date: null };
-const PAGES = {};   // JsPages / JsManage এ পেজগুলো যোগ হয়
-const ACT = {};     // data-act="..." ক্লিক হ্যান্ডলার
-const CHG = {};     // data-chg="..." change হ্যান্ডলার
+const S = { token: null, user: null, settings: {}, appUrl: '', page: 'home', params: {}, users: null, month: null, date: null };
+const PAGES = {};   // pages are added in JsPages / JsManage
+const ACT = {};     // click handlers for data-act="..."
+const CHG = {};     // change handlers for data-chg="..."
 
 const $ = (sel, root) => (root || document).querySelector(sel);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* প্রাইভেট মোড */ } }
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
 };
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const bn = n => Number(n || 0).toLocaleString('bn-BD', { maximumFractionDigits: 2 });
-const tk = n => '৳' + bn(n);
+const num = n => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const tk = n => '৳' + num(n);
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const todayStr = () => ymd(new Date());
 const thisMonth = () => todayStr().slice(0, 7);
 const addDays = (s, n) => { const p = s.split('-').map(Number); return ymd(new Date(p[0], p[1] - 1, p[2] + n)); };
 const shiftMonth = (m, n) => { const p = m.split('-').map(Number); const d = new Date(p[0], p[1] - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
-const fmtDate = (s, opt) => s ? new Date(s + 'T00:00:00').toLocaleDateString('bn-BD', opt || { day: 'numeric', month: 'short', weekday: 'short' }) : '';
-const fmtMonth = m => new Date(m + '-01T00:00:00').toLocaleDateString('bn-BD', { month: 'long', year: 'numeric' });
+const fmtDate = (s, opt) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB', opt || { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+const fmtMonth = m => new Date(m + '-01T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 const isMgr = () => !!S.user && S.user.role !== 'member';
 const isAdmin = () => !!S.user && S.user.role === 'admin';
 const signed = n => (n >= 0 ? '+' : '−') + tk(Math.abs(n));
 const balClass = n => n >= 0 ? 'pos' : 'neg';
+const plural = (n, word) => num(n) + ' ' + word + (Number(n) === 1 ? '' : 's');
 
 /* ================= API ================= */
 let loadCount = 0;
@@ -39,30 +40,43 @@ function loading(on) {
   $('#loader').classList.toggle('hidden', loadCount === 0);
 }
 
+/**
+ * Sends a request to the server. Inside Apps Script it uses google.script.run;
+ * on a separate website (e.g. Vercel) it uses fetch to window.MESS_API_URL (doPost).
+ */
+function transport(action, data) {
+  if (window.google && google.script && google.script.run) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(action, S.token, data);
+    });
+  }
+  if (!window.MESS_API_URL || window.MESS_API_URL.indexOf('/exec') === -1) {
+    return Promise.reject(new Error('API URL is not set — put your Apps Script Web App URL in config.js'));
+  }
+  // A text/plain body is a "simple request", so no CORS preflight is needed
+  return fetch(window.MESS_API_URL, { method: 'POST', body: JSON.stringify({ action: action, token: S.token, data: data }) })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+}
+
 function call(action, data, opts) {
   opts = opts || {};
   if (!opts.silent) loading(true);
-  return new Promise((resolve, reject) => {
-    google.script.run
-      .withSuccessHandler(res => {
-        if (!opts.silent) loading(false);
-        if (res && res.ok) return resolve(res.data);
-        const msg = (res && res.error) || 'কিছু একটা সমস্যা হয়েছে';
-        if (msg.indexOf('AUTH:') === 0) {
-          const wasIn = !!S.user;
-          clearSession();
-          if (wasIn) { toast(msg.slice(5).trim(), 'err'); showAuth(); }
-          return reject(new Error('auth'));
-        }
-        toast(msg, 'err');
-        reject(new Error(msg));
-      })
-      .withFailureHandler(err => {
-        if (!opts.silent) loading(false);
-        toast('সার্ভারে সংযোগ হয়নি। ইন্টারনেট দেখে আবার চেষ্টা করুন।', 'err');
-        reject(err);
-      })
-      .api(action, S.token, data || {});
+  return transport(action, data || {}).then(res => {
+    if (!opts.silent) loading(false);
+    if (res && res.ok) return res.data;
+    const msg = (res && res.error) || 'Something went wrong';
+    if (msg.indexOf('AUTH:') === 0) {
+      const wasIn = !!S.user;
+      clearSession();
+      if (wasIn) { toast(msg.slice(5).trim(), 'err'); showAuth(); }
+      throw new Error('auth');
+    }
+    toast(msg, 'err');
+    throw new Error(msg);
+  }, err => {
+    if (!opts.silent) loading(false);
+    toast(err && err.message && err.message.indexOf('config.js') > -1 ? err.message : 'Could not reach the server. Check your internet and try again.', 'err');
+    throw err;
   });
 }
 
@@ -76,7 +90,7 @@ function userOptions(users, selected, emptyLabel) {
       .map(u => `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc(u.name)}${u.room ? ' (' + esc(u.room) + ')' : ''}</option>`).join('');
 }
 
-/* ================= UI: টোস্ট, মডাল ================= */
+/* ================= UI: toast, modal ================= */
 function toast(msg, type) {
   const el = document.createElement('div');
   el.className = 'toast ' + (type || '');
@@ -95,7 +109,7 @@ function formData(form) {
   return o;
 }
 
-/** onSubmit(data, form) — true ফেরত দিলে ডায়ালগ খোলা থাকে */
+/** onSubmit(data, form) — return true to keep the dialog open */
 function openModal(title, html, onSubmit) {
   $('#modalTitle').textContent = title;
   $('#modalBody').innerHTML = html;
@@ -109,7 +123,7 @@ function openModal(title, html, onSubmit) {
       try {
         const keep = await onSubmit(formData(form), form);
         if (keep !== true) closeModal();
-      } catch (err) { /* টোস্টে দেখানো হয়েছে */ }
+      } catch (err) { /* already shown as a toast */ }
       if (btn) btn.disabled = false;
     };
     const first = $('input:not([type="hidden"]), select, textarea', form);
@@ -120,23 +134,52 @@ function closeModal() { $('#modal').classList.add('hidden'); $('#modalBody').inn
 
 function confirmBox(msg, okText) {
   return new Promise(resolve => {
-    openModal('নিশ্চিত করুন', `<form class="stack"><p>${esc(msg)}</p>
-      <div class="row"><button type="button" class="btn" data-act="modal-close">না</button>
-      <button type="submit" class="btn danger">${esc(okText || 'হ্যাঁ')}</button></div></form>`, () => { resolve(true); });
+    openModal('Please confirm', `<form class="stack"><p>${esc(msg)}</p>
+      <div class="row"><button type="button" class="btn" data-act="modal-close">No</button>
+      <button type="submit" class="btn danger">${esc(okText || 'Yes')}</button></div></form>`, () => { resolve(true); });
     const obs = new MutationObserver(() => { if ($('#modal').classList.contains('hidden')) { obs.disconnect(); resolve(false); } });
     obs.observe($('#modal'), { attributes: true });
   });
 }
 
-/* ================= ছবি ================= */
+/* ================= Share login details ================= */
+function appLink() {
+  return window.MESS_API_URL ? location.origin + location.pathname : (S.appUrl || '');
+}
+
+/** After adding a member or resetting a password: copy or send the details on WhatsApp */
+function shareLogin(name, username, password) {
+  const link = appLink();
+  const msg = `Hi ${name}, here is your login for ${S.settings.messName || 'our mess'}:\n` +
+    (link ? `Link: ${link}\n` : '') + `Username: ${username}\nPassword: ${password}\n` +
+    `You can change your password from Profile after logging in.`;
+  openModal('Share login details', `<div class="stack">
+      <p class="small muted" style="margin:0">Send this to ${esc(name)} so they can log in.</p>
+      <textarea id="shareText" rows="6" readonly>${esc(msg)}</textarea>
+      <div class="row">
+        <button class="btn" data-act="copy-share">📋 Copy</button>
+        <a class="btn ok" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
+      </div></div>`);
+}
+
+ACT['copy-share'] = () => {
+  const t = $('#shareText');
+  t.select();
+  const done = () => toast('Copied', 'ok');
+  const fallback = () => { try { document.execCommand('copy'); done(); } catch (e) { toast('Select the text and copy it manually', 'err'); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(done, fallback);
+  else fallback();
+};
+
+/* ================= Photos ================= */
 function compressImage(file, max, quality) {
   max = max || 1400; quality = quality || 0.75;
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('ছবি পড়া যায়নি'));
+    reader.onerror = () => reject(new Error('Could not read the photo'));
     reader.onload = () => {
       const img = new Image();
-      img.onerror = () => reject(new Error('এই ছবিটি খোলা যাচ্ছে না, অন্য ছবি দিন'));
+      img.onerror = () => reject(new Error('This photo cannot be opened, please choose another one'));
       img.onload = () => {
         const scale = Math.min(1, max / Math.max(img.width, img.height));
         const c = document.createElement('canvas');
@@ -155,7 +198,7 @@ function compressImage(file, max, quality) {
   });
 }
 
-/** ফর্মের ছবি ফিল্ড থেকে কমপ্রেস করা ছবি (না থাকলে null) */
+/** The compressed photo from a form's file field (or null) */
 async function imageFromForm(form) {
   const input = $('input[type="file"]', form);
   if (!input || !input.files || !input.files[0]) return null;
@@ -175,10 +218,10 @@ CHG.preview = async el => {
 
 ACT['show-image'] = async el => {
   const src = await call('image.get', { kind: el.dataset.kind, id: el.dataset.id });
-  openModal('মেমোর ছবি', `<img class="memo" src="${src}" alt="মেমো">`);
+  openModal('Memo photo', `<img class="memo" src="${src}" alt="Memo">`);
 };
 
-/* ================= নেভিগেশন ================= */
+/* ================= Navigation ================= */
 const NAV_ORDER = ['home', 'mymeal', 'daymeal', 'memo', 'expense', 'deposit', 'duty', 'report', 'users', 'settings', 'profile'];
 
 function allowed(page) { return PAGES[page] && PAGES[page].roles.indexOf(S.user.role) > -1; }
@@ -191,8 +234,8 @@ function renderNav() {
   const bottom = (isMgr() ? ['home', 'daymeal', 'memo', 'report'] : ['home', 'mymeal', 'memo', 'duty']).filter(allowed);
   $('#bottomNav').innerHTML = bottom.map(p =>
     `<a data-act="go" data-page="${p}" class="${S.page === p ? 'active' : ''}"><span class="ico">${PAGES[p].icon}</span>${PAGES[p].short || PAGES[p].title}
-     ${p === 'memo' && S.pendingMemos ? `<span class="dot">${bn(S.pendingMemos)}</span>` : ''}</a>`).join('') +
-    `<a data-act="menu"><span class="ico">☰</span>আরো</a>`;
+     ${p === 'memo' && S.pendingMemos ? `<span class="dot">${num(S.pendingMemos)}</span>` : ''}</a>`).join('') +
+    `<a data-act="menu"><span class="ico">☰</span>More</a>`;
 }
 
 async function go(page, params) {
@@ -204,17 +247,17 @@ async function go(page, params) {
   renderNav();
   closeDrawer();
   const view = $('#view');
-  view.innerHTML = '<div class="empty">লোড হচ্ছে…</div>';
+  view.innerHTML = '<div class="empty">Loading…</div>';
   window.scrollTo(0, 0);
   try { await PAGES[page].render(view, S.params); }
-  catch (e) { if (S.page === page && e.message !== 'auth') view.innerHTML = `<div class="empty">${esc(e.message || 'লোড করা যায়নি')}<br><br><button class="btn" data-act="reload">আবার চেষ্টা</button></div>`; }
+  catch (e) { if (S.page === page && e.message !== 'auth') view.innerHTML = `<div class="empty">${esc(e.message || 'Could not load')}<br><br><button class="btn" data-act="reload">Try again</button></div>`; }
 }
 const refresh = () => go(S.page, S.params);
 
 function openDrawer() { $('#drawer').classList.add('open'); $('#scrim').classList.add('open'); }
 function closeDrawer() { $('#drawer').classList.remove('open'); $('#scrim').classList.remove('open'); }
 
-/** মাস বদলানোর বার (‹ অক্টোবর ২০২৬ ›) */
+/** Month switcher (‹ October 2026 ›) */
 function monthNav() {
   S.month = S.month || thisMonth();
   return `<div class="switcher"><button class="btn sm" data-act="month-shift" data-n="-1">‹</button>
@@ -234,7 +277,7 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (!el || !ACT[el.dataset.act]) return;
   e.preventDefault();
-  Promise.resolve().then(() => ACT[el.dataset.act](el, e)).catch(() => { /* টোস্টে দেখানো হয়েছে */ });
+  Promise.resolve().then(() => ACT[el.dataset.act](el, e)).catch(() => { /* already shown as a toast */ });
 });
 document.addEventListener('change', e => {
   const el = e.target.closest('[data-chg]');
@@ -242,15 +285,16 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeDrawer(); } });
 
-/* ================= লগইন ================= */
+/* ================= Login ================= */
 function clearSession() { store.set('token', null); S.token = null; S.user = null; S.users = null; }
 
 function startApp(res) {
   if (res.token) { S.token = res.token; store.set('token', res.token); }
   S.user = res.user;
   S.settings = res.settings || {};
+  S.appUrl = res.appUrl || S.appUrl;
   S.month = thisMonth();
-  $('#messName').textContent = S.settings.messName || 'মেস মিল হিসাব';
+  $('#messName').textContent = document.title = S.settings.messName || 'Mess Meal Manager';
   $('#userName').textContent = S.user.name;
   $('#userRole').textContent = ROLE_LABEL[S.user.role];
   $('#auth').classList.add('hidden');
@@ -264,17 +308,20 @@ async function showAuth() {
   $('#loginForm').classList.add('hidden');
   $('#setupForm').classList.add('hidden');
   const st = await call('auth.status');
-  if (st.messName) $('#authTitle').textContent = st.messName;
+  if (st.messName) $('#authTitle').textContent = document.title = st.messName;
   $(st.needsSetup ? '#setupForm' : '#loginForm').classList.remove('hidden');
 }
 
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
-  try { startApp(await call('auth.login', formData(e.target))); e.target.reset(); } catch (err) { /* টোস্ট */ }
+  try { startApp(await call('auth.login', formData(e.target))); e.target.reset(); } catch (err) { /* toast */ }
 });
 $('#setupForm').addEventListener('submit', async e => {
   e.preventDefault();
-  try { startApp(await call('auth.setupAdmin', formData(e.target))); toast('স্বাগতম! এখন সদস্যদের যোগ করুন', 'ok'); } catch (err) { /* টোস্ট */ }
+  try {
+    startApp(await call('auth.setupAdmin', formData(e.target)));
+    toast('Welcome! Next, add your members from "Members & roles".', 'ok');
+  } catch (err) { /* toast */ }
 });
 
 window.addEventListener('load', async () => {

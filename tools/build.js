@@ -1,32 +1,38 @@
-// apps-script/ ফোল্ডারের সব ফাইল জুড়ে এক-ফাইলের deploy/Code.gs বানায়।
-// চালাতে: node tools/build.js
+// Builds the deployable files from apps-script/:
+//   deploy/Code.gs     — the whole app in one file, to paste into Apps Script
+//   public/index.html  — the same app for Vercel / any static host (reads public/config.js)
+// Run: node tools/build.js
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'apps-script');
 const OUT = path.join(ROOT, 'deploy', 'Code.gs');
+const WEB_OUT = path.join(ROOT, 'public', 'index.html');
+const WEB_CONFIG = path.join(ROOT, 'public', 'config.js');
 const GS_ORDER = ['Code', 'Db', 'Auth', 'Meals', 'Finance', 'Duties', 'Report'];
 
 const read = name => fs.readFileSync(path.join(SRC, name), 'utf8').replace(/\r\n/g, '\n');
+const report = (file, text, extra) =>
+  console.log('✅ ' + path.relative(ROOT, file) + ' — ' + Math.round(text.length / 1024) + ' KB' + (extra || ''));
 
-// 1) HTML: include() গুলো বসিয়ে একটা পূর্ণ পেজ
+// 1) HTML: resolve include()s into one page
 let html = read('Index.html').replace(/<\?!= include\('(\w+)'\); \?>/g, (m, name) => read(name + '.html'));
 html = html.replace(/<\?= messName \?>/g, '{{MESS_NAME}}');
-if (html.includes('<?')) throw new Error('Index.html-এ অজানা টেমপ্লেট ট্যাগ রয়ে গেছে');
+if (html.includes('<?')) throw new Error('Unknown template tag left in Index.html');
 
-// টেমপ্লেট লিটারাল হিসেবে নিরাপদে বসানো: \ ` ${ এস্কেপ
+// Embed safely inside a template literal: escape \ ` ${
 const literal = html.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-if (new Function('return `' + literal + '`')() !== html) throw new Error('HTML এস্কেপ ঠিক হয়নি');
+if (new Function('return `' + literal + '`')() !== html) throw new Error('HTML escaping failed');
 
-// 2) .gs ফাইলগুলো, পেজ বানানোর অংশটা এমবেড করা HTML দিয়ে বদলে
+// 2) The .gs files, with the page-building block replaced by the embedded HTML
 const page = /\/\/ BUILD:PAGE-START[\s\S]*?\/\/ BUILD:PAGE-END\n/;
 const code = GS_ORDER.map(name => {
   let src = read(name + '.gs');
   if (name === 'Code') {
-    if (!page.test(src)) throw new Error('Code.gs-এ BUILD:PAGE মার্কার পাওয়া যায়নি');
+    if (!page.test(src)) throw new Error('BUILD:PAGE markers not found in Code.gs');
     src = src.replace(page, [
-      '/** পুরো পেজ (এই ফাইলের শেষে APP_HTML) — মেসের নাম বসিয়ে ফেরত দেয় */',
+      '/** The full page (APP_HTML at the end of this file) with the mess name filled in */',
       'function pageHtml_(messName) {',
       "  return APP_HTML.split('{{MESS_NAME}}').join(escapeHtml_(messName));",
       '}',
@@ -38,22 +44,21 @@ const code = GS_ORDER.map(name => {
 
 const header = `/**
  * ===================================================================
- *  মেস মিল হিসাব — এক ফাইলে পুরো অ্যাপ (Google Apps Script)
+ *  Mess Meal Manager — the whole app in one file (Google Apps Script)
  * ===================================================================
  *
- *  কীভাবে চালু করবেন:
- *   1. Google Sheet খুলুন → Extensions → Apps Script
- *   2. Code.gs-এর সব লেখা মুছে এই ফাইলের পুরোটা পেস্ট করুন → Save (Ctrl+S)
- *   3. উপরের ফাংশন তালিকা থেকে "setup" বেছে Run চাপুন → অনুমতি দিন
- *      (Advanced → Go to ... (unsafe) → Allow)
- *   4. Deploy → New deployment → ⚙️ Web app
- *        Execute as: Me   |   Who has access: Anyone   → Deploy
- *   5. Web app URL খুলে প্রথমে অ্যাডমিন অ্যাকাউন্ট বানান, তারপর সদস্য যোগ করুন
+ *  How to install:
+ *   1. Open your Google Sheet → Extensions → Apps Script
+ *   2. Delete everything in Code.gs, paste this whole file → Save (Ctrl+S)
+ *   3. Deploy → New deployment → ⚙️ Web app
+ *        Execute as: Me   |   Who has access: Anyone   → Deploy → Authorize
+ *   4. Open the Web app URL and create the admin account. Done!
  *
- *  কোড বদলালে: Deploy → Manage deployments → ✏️ → Version: New version → Deploy
- *  (তাহলে URL একই থাকে)
+ *  Updating later: paste the new file, then
+ *  Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy
+ *  (this keeps the same URL — do NOT make a "New deployment")
  *
- *  এই ফাইলটি apps-script/ ফোল্ডার থেকে "node tools/build.js" দিয়ে তৈরি।
+ *  This file is generated from apps-script/ by "node tools/build.js".
  * ===================================================================
  */
 
@@ -68,4 +73,37 @@ const APP_HTML = \`${literal}\`;
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, out);
-console.log('✅ ' + path.relative(ROOT, OUT) + ' — ' + Math.round(out.length / 1024) + ' KB, ' + out.split('\n').length + ' লাইন');
+report(OUT, out, ', ' + out.split('\n').length + ' lines');
+
+// 3) Static page for Vercel: the page comes from Vercel, the data from the Apps Script Web App (doPost)
+const icon = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍛</text></svg>";
+const webHead = [
+  '<meta charset="utf-8">',
+  '  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">',
+  '  <title>Mess Meal Manager</title>',
+  '  <link rel="icon" href="data:image/svg+xml,' + encodeURIComponent(icon) + '">',
+  '  <script src="config.js"></script>'
+].join('\n');
+const web = html
+  .split('{{MESS_NAME}}').join('Mess Meal Manager')
+  .replace('  <base target="_top">\n', '')
+  .replace('<meta charset="utf-8">', webHead);
+if (!web.includes('config.js')) throw new Error('Could not add config.js to public/index.html');
+fs.mkdirSync(path.dirname(WEB_OUT), { recursive: true });
+fs.writeFileSync(WEB_OUT, web);
+report(WEB_OUT, web, ' (Vercel)');
+
+// public/config.js holds the Apps Script URL. It is edited by hand, so only create it if missing.
+if (!fs.existsSync(WEB_CONFIG)) {
+  fs.writeFileSync(WEB_CONFIG, [
+    '// Your Apps Script Web App URL (Deploy → Manage deployments → Web app → URL).',
+    '// Change only the text between the quotes.',
+    'window.MESS_API_URL = "PASTE_YOUR_WEB_APP_URL_HERE";',
+    ''
+  ].join('\n'));
+  console.log('ℹ️  Created public/config.js — put your Web App URL in it');
+}
+const cfg = fs.readFileSync(WEB_CONFIG, 'utf8');
+if (!/https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec/.test(cfg)) {
+  console.warn('⚠️  public/config.js has no valid Web App URL yet — the Vercel site will not connect');
+}

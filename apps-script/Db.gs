@@ -1,6 +1,6 @@
 /**
- * Google Sheet-কে ডাটাবেস হিসেবে ব্যবহারের সহায়ক ফাংশন।
- * প্রতিটি শিটের প্রথম সারি হেডার; প্রথম কলাম ফাঁকা থাকলে সারিটি উপেক্ষা করা হয়।
+ * Helpers for using a Google Sheet as the database.
+ * Row 1 of every sheet is the header; rows whose first cell is empty are ignored.
  */
 
 const SCHEMA_VERSION = '1';
@@ -15,11 +15,11 @@ const SCHEMA = {
   Settings: ['key', 'value']
 };
 
-// সংখ্যা হিসেবে রাখা কলাম; বাকি সব টেক্সট (যাতে ফোন নম্বর, তারিখ, সময় বদলে না যায়)
+// Columns stored as numbers; everything else is plain text so phone numbers, dates and times stay as typed
 const NUMERIC_FORMAT = { lunch: '0', dinner: '0', amount: '#,##0.00' };
 
 const DEFAULT_SETTINGS = {
-  messName: 'আমাদের মেস',
+  messName: 'Our Mess',
   lunchCutoff: '10:00',
   dinnerCutoff: '17:00',
   maxGuestMeal: '5'
@@ -33,7 +33,7 @@ function getSS_() {
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty('SHEET_ID');
   _ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
-  if (!_ss) throw new Error('ডাটাবেস (Google Sheet) পাওয়া যায়নি। Apps Script এডিটর থেকে setup() চালান।');
+  if (!_ss) throw new Error('Database (Google Sheet) not found. Create this script from the Sheet via Extensions → Apps Script.');
   if (!id) props.setProperty('SHEET_ID', _ss.getId());
   if (props.getProperty('SCHEMA_V') !== SCHEMA_VERSION) {
     ensureSheets_(_ss);
@@ -53,7 +53,7 @@ function ensureSheets_(ss) {
       .setFontColor('#ffffff');
     sh.setFrozenRows(1);
   });
-  // নতুন শিটের ফাঁকা ডিফল্ট ট্যাব মুছে ফেলি
+  // Remove the empty default tab of a new spreadsheet
   ss.getSheets().forEach(function (sh) {
     if (!SCHEMA[sh.getName()] && sh.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sh);
   });
@@ -61,11 +61,11 @@ function ensureSheets_(ss) {
 
 function sheet_(name) {
   const sh = getSS_().getSheetByName(name);
-  if (!sh) throw new Error('শিট পাওয়া যায়নি: ' + name + ' — setup() চালান');
+  if (!sh) throw new Error('Sheet not found: ' + name + ' — run setup()');
   return sh;
 }
 
-/** পুরো টেবিল অবজেক্টের তালিকা হিসেবে পড়ে (_row = শিটের সারি নম্বর) */
+/** Reads a whole table as a list of objects (_row = row number in the sheet) */
 function readAll_(name) {
   if (_tableCache[name]) return _tableCache[name];
   const sh = sheet_(name);
@@ -117,13 +117,13 @@ function insertRows_(name, objs) {
 }
 
 function updateRow_(name, rowIndex, obj) {
-  if (!rowIndex) throw new Error('সারি পাওয়া যায়নি');
+  if (!rowIndex) throw new Error('Row not found');
   sheet_(name).getRange(rowIndex, 1, 1, SCHEMA[name].length).setValues([toRow_(name, obj)]);
   delete _tableCache[name];
 }
 
 function deleteRow_(name, rowIndex) {
-  if (!rowIndex) throw new Error('সারি পাওয়া যায়নি');
+  if (!rowIndex) throw new Error('Row not found');
   sheet_(name).deleteRow(rowIndex);
   delete _tableCache[name];
 }
@@ -134,7 +134,7 @@ function findById_(name, id) {
   return null;
 }
 
-/* ---------- সেটিংস ---------- */
+/* ---------- Settings ---------- */
 
 function getSettings_() {
   const s = {};
@@ -151,10 +151,10 @@ function settingsSave_(d) {
     if (d[k] === undefined) return;
     let v = String(d[k]).trim();
     if ((k === 'lunchCutoff' || k === 'dinnerCutoff') && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) {
-      throw new Error('সময় HH:MM ফরম্যাটে দিন (যেমন 10:00)');
+      throw new Error('Enter the time as HH:MM (for example 10:00)');
     }
     if (k === 'maxGuestMeal') v = String(Math.max(1, Math.min(20, parseInt(v, 10) || 1)));
-    if (k === 'messName' && !v) throw new Error('মেসের নাম দিন');
+    if (k === 'messName' && !v) throw new Error('Enter the mess name');
     const ex = rows.filter(function (r) { return r.key === k; })[0];
     if (ex) updateRow_('Settings', ex._row, { key: k, value: v });
     else inserts.push({ key: k, value: v });
@@ -163,7 +163,7 @@ function settingsSave_(d) {
   return getSettings_();
 }
 
-/* ---------- তারিখ ও সাধারণ সহায়ক ---------- */
+/* ---------- Dates and small helpers ---------- */
 
 function tz_() { return APP_TZ; }
 function today_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd'); }
@@ -185,17 +185,17 @@ function addDays_(s, n) {
 function daysBetween_(a, b) { return Math.round((parseYMD_(b) - parseYMD_(a)) / 864e5); }
 
 function requireDate_(s, label) {
-  if (!isYMD_(s)) throw new Error((label || 'তারিখ') + ' সঠিক নয়');
+  if (!isYMD_(s)) throw new Error((label || 'Date') + ' is not valid');
   return s;
 }
 function requireMonth_(s) {
   if (!s) return today_().slice(0, 7);
-  if (!isMonth_(s)) throw new Error('মাস সঠিক নয়');
+  if (!isMonth_(s)) throw new Error('Month is not valid');
   return s;
 }
 function requireAmount_(v) {
   const n = Math.round(Number(v) * 100) / 100;
-  if (!isFinite(n) || n === 0) throw new Error('সঠিক টাকার পরিমাণ দিন');
+  if (!isFinite(n) || n === 0) throw new Error('Enter a valid amount');
   return n;
 }
 function clean_(s, max) { return String(s === undefined || s === null ? '' : s).trim().slice(0, max || 200); }

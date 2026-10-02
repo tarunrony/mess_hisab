@@ -1,171 +1,142 @@
-# 🍛 মেস মিল হিসাব
+# 🍛 Mess Meal Manager
 
-১০ জনের মেসের জন্য মিল, বাজার খরচ, টাকা জমা, বাজার/ওয়াশরুম পরিষ্কারের ডিউটি আর বাজারের মেমো রাখার ওয়েব অ্যাপ।
-চলে **Google Apps Script**-এ, আর সব তথ্য জমা থাকে আপনার নিজের **Google Sheet**-এ। কোনো সার্ভার বা টাকা লাগে না।
+A simple web app for a shared mess (about 10 members): daily meals, bazar (grocery) costs, deposits, bazar and washroom-cleaning duties, and bazar memo photos.
+It runs on **Google Apps Script** and keeps all data in your own **Google Sheet** — no server, no cost.
 
-- প্রতিদিন দুই বেলা মিল: ☀️ দুপুর ও 🌙 রাত (গেস্ট থাকলে একাধিক)
-- মোবাইলে ভালো চলে, পুরো অ্যাপ বাংলায়
+- Two meals a day: ☀️ lunch and 🌙 dinner (guests count as extra meals)
+- Works well on phones; can also run on a nicer **Vercel** link
 
 ---
 
-## রোল (কে কী করতে পারবে)
+## Roles
 
-| কাজ | সদস্য | ম্যানেজার | অ্যাডমিন |
+| What | Member | Manager | Admin |
 |---|:-:|:-:|:-:|
-| নিজের মিল চালু/বন্ধ (কবে কবে খাবে) | ✅ | ✅ | ✅ |
-| বাজারের মেমোর ছবি আপলোড | ✅ | ✅ | ✅ |
-| নিজের ডিউটি "সম্পন্ন" করা | ✅ | ✅ | ✅ |
-| মাসিক রিপোর্ট, খরচ, ডিউটি দেখা | ✅ | ✅ | ✅ |
-| যেকোনো দিনের সবার মিল এন্ট্রি/সংশোধন | – | ✅ | ✅ |
-| খরচ ও জমা যোগ/সম্পাদনা | – | ✅ | ✅ |
-| মেমো যাচাই (অনুমোদন/বাতিল) | – | ✅ | ✅ |
-| বাজার ও পরিষ্কারের রোস্টার তৈরি | – | ✅ | ✅ |
-| সদস্য যোগ, রোল ঠিক করা, পাসওয়ার্ড রিসেট | – | – | ✅ |
-| সেটিংস (মিল বন্ধের সময় ইত্যাদি) | – | – | ✅ |
+| Switch own meals on/off (one tap on Home) | ✅ | ✅ | ✅ |
+| Upload a bazar memo photo | ✅ | ✅ | ✅ |
+| Mark own duty as done | ✅ | ✅ | ✅ |
+| See the monthly report, expenses and duties | ✅ | ✅ | ✅ |
+| Enter / fix everyone's meals for any day | – | ✅ | ✅ |
+| Add / edit expenses and deposits | – | ✅ | ✅ |
+| Review memos (approve / reject) | – | ✅ | ✅ |
+| Make bazar and cleaning rosters | – | ✅ | ✅ |
+| Add members, set roles, reset passwords | – | – | ✅ |
+| Settings (meal cut-off times etc.) | – | – | ✅ |
 
-## হিসাব কীভাবে হয়
+## How the accounts work
 
 ```
-মিল রেট        = মাসের মোট বাজার খরচ ÷ মাসের মোট মিল
-মিল খরচ        = নিজের মিল × মিল রেট
-সাধারণ খরচ ভাগ = মোট সাধারণ খরচ (গ্যাস, খালা, বিদ্যুৎ...) ÷ সদস্য সংখ্যা
-মোট জমা        = টাকা জমা + নিজের টাকায় করা বাজার
-ব্যালেন্স       = মোট জমা − (মিল খরচ + সাধারণ খরচ ভাগ)
+Meal rate    = total bazar cost of the month ÷ total meals of the month
+Meal cost    = your meals × meal rate
+Shared share = total shared costs (gas, maid, electricity...) ÷ number of members
+Paid         = cash deposits + bazar you paid from your own pocket
+Balance      = paid − (meal cost + shared share)
 ```
 
-ব্যালেন্স **+** হলে সদস্য টাকা ফেরত পাবে, **−** হলে মেসকে দিতে হবে।
-"হাতে আছে" = মোট জমা − মেস ফান্ড থেকে করা খরচ (ম্যানেজারের কাছে কত টাকা থাকার কথা)।
+A **+** balance means the member gets money back; **−** means they still have to pay.
+"Cash with manager" = total deposits − costs paid from the mess fund.
 
 ---
 
-## সেটআপ (প্রথমবার, ১০–১৫ মিনিট)
+## Install (about 5 minutes)
 
-### ১. Google Sheet বানান
-1. [sheets.new](https://sheets.new) খুলে একটা নতুন শিট বানান, নাম দিন যেমন `Mess Hisab`।
-2. মেনু থেকে **Extensions → Apps Script** খুলুন।
+1. **Make a Google Sheet** — open [sheets.new](https://sheets.new) and give it a name, e.g. `Mess Accounts`.
+2. **Paste the code** — in the Sheet open **Extensions → Apps Script**. Delete everything in `Code.gs`, paste the whole of [`deploy/Code.gs`](deploy/Code.gs) (on GitHub: open it → **Raw** → Ctrl+A, Ctrl+C) and press **Ctrl+S**.
+3. **Deploy** — **Deploy → New deployment →** ⚙️ **Web app**, set **Execute as: Me** and **Who has access: Anyone**, press **Deploy** and allow the permissions (if you see "Google hasn't verified this app": **Advanced → Go to … (unsafe) → Allow** — it is your own script).
+4. **Open the Web app URL** and create the admin account. The sheets, the Drive folder for memo photos and the nightly auto-meal job are set up automatically.
+5. **Add members** from **Members & roles**. After saving, the app offers to send each person their login on **WhatsApp** or copy it. Give one person the **Manager** role.
 
-### ২. কোড বসান (একটাই ফাইল)
-1. এই রিপোর [`deploy/Code.gs`](deploy/Code.gs) ফাইলটা খুলে পুরোটা কপি করুন (GitHub-এ **Raw** চেপে Ctrl+A, Ctrl+C)।
-2. Apps Script এডিটরে আগে থেকে থাকা `Code.gs`-এর সব লেখা মুছে পেস্ট করুন।
-3. 💾 Save (Ctrl+S)।
+> ⚠️ Create the admin account **before** sharing the link — until then, whoever opens it first can become admin.
+> "Anyone" access is safe after that: nothing can be seen without logging in, and only you can open the Sheet.
 
-এই একটা ফাইলেই পুরো অ্যাপ (ব্যাকএন্ড + ডিজাইন + পেজ) আছে, আর কোনো ফাইল বানাতে হবে না। টাইমজোন (`Asia/Dhaka`) কোডেই দেওয়া আছে।
+### Updating the code later
 
-<details>
-<summary>অন্য উপায়: আলাদা আলাদা ফাইল (ডেভেলপারদের জন্য)</summary>
+Paste the new `deploy/Code.gs`, save, then **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**.
+This keeps the **same URL**. Making a *New deployment* creates a new URL, and the old links (and the Vercel site) stop getting updates.
 
-`apps-script/` ফোল্ডারের প্রতিটি ফাইলের জন্য Apps Script-এ একই নামের ফাইল বানিয়ে কোড পেস্ট করুন:
+---
 
-| ধরন | ফাইলের নাম (এক্সটেনশন ছাড়া) |
+## Optional: a nicer link on Vercel
+
+The page is served from Vercel, while all data still comes from your Google Sheet (through the Apps Script `doPost` API).
+
+1. Finish the install above and create the admin account.
+2. Put your Web App URL in [`public/config.js`](public/config.js) — you can edit it directly on GitHub (✏️ icon). Only change the text between the quotes.
+3. Import the GitHub repo in [vercel.com](https://vercel.com) → Framework preset **Other**, no build command ([`vercel.json`](vercel.json) points Vercel to `public/`).
+
+If the Apps Script URL ever changes, just edit `public/config.js` again — Vercel redeploys by itself.
+
+---
+
+## Daily use
+
+**Members**
+- **Home → My meals**: tap Lunch / Dinner for today or tomorrow to switch it on or off.
+- **My meals**: a whole week at a time; use **+** for guests, or **Many days at once** (e.g. going home for 5 days).
+- **Default meals**: when on, your meals are added automatically every day — you only switch off the days you won't eat.
+- Today's lunch can be changed until **10:00** and dinner until **17:00** (admin can change these). After that it is locked 🔒 — ask the manager.
+- **Memos**: after doing the bazar, upload a photo of the memo with the total. If you had a bazar duty that day, it is marked done automatically.
+
+**Manager**
+- **Meal entry**: see and edit everyone's lunch/dinner for any date, then **Save**. The totals at the bottom tell the cook how many meals to make.
+- **Memos → Review**: check the photo, fix the amount if needed and **Approve** — it is added to expenses. If the member paid with their own money, keep the tick: it counts as their payment.
+- **Expenses**: `Bazar` (goes into the meal rate) or `Shared` (split equally).
+- **Deposits**: who paid how much. Use a negative amount for refunds or to carry over last month's due.
+- **Duties → Make a roster**: e.g. bazar every 2 days, washroom every 3 days, members taking turns.
+
+---
+
+## Google Sheet layout
+
+| Sheet | Contents |
 |---|---|
-| Script (`+` → Script) | `Code`, `Db`, `Auth`, `Meals`, `Finance`, `Duties`, `Report` |
-| HTML (`+` → HTML) | `Index`, `Styles`, `JsCore`, `JsPages`, `JsManage` |
+| `Users` | members, roles, password hashes (never plain passwords), default meals |
+| `Meals` | one row per member per day: `lunch`, `dinner` |
+| `Expenses` | `bazar` / `shared`, who paid (`paidBy` empty = mess fund) |
+| `Deposits` | money paid in |
+| `Duties` | bazar (`bazar`) and cleaning (`clean`) duties |
+| `Memos` | uploaded memos and their status (`pending/approved/rejected`) |
+| `Settings` | mess name, meal cut-off times, max meals per slot |
 
-</details>
+> Do **not** change the header row or the column order. Memo photos are kept in the Drive folder `Mess Memo Images`; they are not shared publicly — the app shows them itself.
 
-### ৩. setup চালান
-1. এডিটরের উপরে ফাংশনের তালিকা থেকে `setup` বেছে **Run** চাপুন।
-2. অনুমতি চাইবে → নিজের Google অ্যাকাউন্ট বেছে নিন → "Google hasn't verified this app" এলে **Advanced → Go to ... (unsafe)** → **Allow**।
-   (এটা আপনার নিজের বানানো স্ক্রিপ্ট, তাই এই সতর্কবার্তা আসে।)
-3. শিটে `Users, Meals, Expenses, Deposits, Duties, Memos, Settings` ট্যাব তৈরি হবে, Google Drive-এ `Mess Memo Images` ফোল্ডার হবে, আর প্রতিদিন রাত ~১২:৩০-এ অটো-মিলের ট্রিগার সেট হবে।
+## FAQ
 
-### ৪. Web App হিসেবে Deploy
-1. **Deploy → New deployment** → ⚙️ থেকে **Web app** বেছে নিন।
-2. **Execute as: Me**, **Who has access: Anyone**।
-3. **Deploy** চাপুন, তারপর **Web app URL** কপি করুন।
-
-### ৫. চালু করুন
-1. URL খুললে প্রথমবার "অ্যাডমিন অ্যাকাউন্ট তৈরি করুন" ফর্ম আসবে — মেসের নাম, আপনার নাম, ইউজারনেম, পাসওয়ার্ড দিন।
-2. **সদস্য ও রোল** পেজ থেকে বাকি ৯ জনকে যোগ করুন (ইউজারনেম হিসেবে মোবাইল নম্বরও দেওয়া যায়), একজনকে **ম্যানেজার** রোল দিন।
-3. URL-টা মেসের সবার সাথে শেয়ার করুন। মোবাইলে খুলে ব্রাউজারের মেনু থেকে **Add to Home screen** করলে অ্যাপের মতো চলবে।
-
-> ⚠️ "Anyone" দিলেও লগইন ছাড়া কেউ কোনো তথ্য দেখতে পারবে না। শিট শুধু আপনার অ্যাকাউন্টে থাকে, অন্যদের শিটের অ্যাক্সেস দেওয়ার দরকার নেই।
+- **Forgot password?** Admin → Members & roles → ✎ Edit → type a new password → share it.
+- **Someone left the mess?** Set their status to **Inactive**. Their history stays, but they can no longer log in.
+- **Last month's dues or advance?** Each month is calculated separately. Add a + or − deposit for that member in the new month.
+- **5 wrong passwords** lock that username for 30 minutes.
 
 ---
 
-## কোড আপডেট করলে
-1. `apps-script/` ফোল্ডারের ফাইল বদলান, তারপর এক-ফাইলের সংস্করণ আবার বানান:
-   ```bash
-   node tools/build.js      # deploy/Code.gs নতুন করে তৈরি হয়
-   ```
-2. নতুন `deploy/Code.gs` Apps Script-এ পেস্ট করে Save করুন।
-3. **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**।
-   এভাবে করলে URL একই থাকে। নতুন deployment বানালে URL বদলে যাবে।
+## For developers
 
-### (ঐচ্ছিক) clasp দিয়ে
-শিট থেকে Extensions → Apps Script খুলে **Project Settings** থেকে Script ID কপি করুন, তারপর প্রজেক্ট ফোল্ডারে `.clasp.json` বানান:
-
-```json
-{ "scriptId": "<SCRIPT_ID>", "rootDir": "apps-script" }
 ```
+deploy/Code.gs      ⭐ the whole app in one file — paste this into Apps Script
+public/index.html   the same app for Vercel (generated), loads public/config.js
+public/config.js    the Apps Script Web App URL used by the Vercel site (edit by hand)
+vercel.json         tells Vercel to serve public/
+tools/build.js      builds deploy/Code.gs and public/index.html from apps-script/
+apps-script/        source files
+  Code.gs           doGet/doPost, API router, optional setup()
+  Db.gs             Google Sheet helpers, settings, dates
+  Auth.gs           login, tokens, passwords, members
+  Meals.gs          meals, cut-off times, nightly auto-meal job
+  Finance.gs        expenses, deposits, memos and photos (Drive)
+  Duties.gs         bazar and cleaning duties, rosters
+  Report.gs         monthly report and home dashboard
+  Index.html        page structure
+  Styles.html       design (mobile + dark mode)
+  JsCore.html       API calls, login, navigation, sharing logins
+  JsPages.html      Home, My meals, Memos, Duties, Report, Profile
+  JsManage.html     Meal entry, Expenses, Deposits, Memo review, Members, Settings
+  appsscript.json   manifest (only needed when using clasp)
+```
+
+After changing anything in `apps-script/`, run:
 
 ```bash
-npm install -g @google/clasp
-clasp login
-clasp push        # apps-script/ এর সব ফাইল Apps Script-এ পাঠায়
+node tools/build.js
 ```
 
----
-
-## দৈনন্দিন ব্যবহার
-
-**সদস্য**
-- **আমার মিল**: সপ্তাহের প্রতিদিনের দুপুর/রাতের মিল `−` `+` দিয়ে ঠিক করুন। গেস্ট থাকলে সংখ্যা বাড়ান।
-- **একসাথে অনেক দিন**: যেমন বাড়ি যাচ্ছেন, ৫ দিন দুই বেলাই বন্ধ।
-- **ডিফল্ট মিল**: চালু থাকলে প্রতিদিন আপনাআপনি মিল বসে যায়, শুধু যেদিন খাবেন না সেদিন বন্ধ করবেন।
-- আজকের দুপুরের মিল সেটিংসের সময় (ডিফল্ট সকাল ১০টা) আর রাতের মিল (বিকাল ৫টা) পর্যন্ত বদলানো যায়। এরপর 🔒, তখন ম্যানেজারকে বলতে হবে।
-- **মেমো**: বাজার করে মেমোর ছবি তুলে টাকার পরিমাণসহ আপলোড করুন। ওই দিনে আপনার বাজার ডিউটি থাকলে সেটা আপনাআপনি "সম্পন্ন" হয়ে যাবে।
-
-**ম্যানেজার**
-- **মিল এন্ট্রি**: যেকোনো তারিখে সবার দুপুর/রাতের মিল একসাথে দেখুন ও ঠিক করে **সেভ** করুন। নিচে বেলাভিত্তিক মোট মিল দেখায়, রান্নার জন্য কাজে লাগে।
-- **মেমো যাচাই**: ছবি দেখে টাকা ঠিক করে **অনুমোদন** দিলে খরচের তালিকায় যোগ হয়। সদস্য নিজের টাকায় বাজার করলে টিক দিন, টাকাটা তার জমায় যোগ হবে।
-- **খরচ**: `বাজার` (মিল রেটে যায়) বা `সাধারণ` (সবার মধ্যে সমান ভাগ)।
-- **জমা**: কে কত টাকা দিল। ফেরত দিলে বা আগের মাসের বাকি সমন্বয় করতে মাইনাস (−) দিন।
-- **ডিউটি → রোস্টার তৈরি**: যেমন প্রতি ২ দিন পরপর বাজার, প্রতি ৩ দিন পরপর ওয়াশরুম পরিষ্কার, সদস্যদের পালাক্রমে।
-
----
-
-## Google Sheet-এর গঠন
-
-| শিট | কী থাকে |
-|---|---|
-| `Users` | সদস্য, রোল, পাসওয়ার্ড হ্যাশ (আসল পাসওয়ার্ড নয়), ডিফল্ট মিল |
-| `Meals` | প্রতি সদস্য প্রতি দিনে এক সারি: `lunch`, `dinner` |
-| `Expenses` | খরচ: `bazar` / `shared`, কে দিয়েছে (`paidBy` ফাঁকা = ফান্ড) |
-| `Deposits` | টাকা জমা |
-| `Duties` | বাজার (`bazar`) ও পরিষ্কার (`clean`) ডিউটি |
-| `Memos` | আপলোড করা মেমো, অবস্থা (`pending/approved/rejected`) |
-| `Settings` | মেসের নাম, মিল বন্ধের সময়, এক বেলায় সর্বোচ্চ মিল |
-
-> শিটের **হেডার সারি বা কলামের ক্রম বদলাবেন না**। ঘরের মান হাতে ঠিক করা যায়, কিন্তু অ্যাপ থেকে করাই নিরাপদ।
-> মেমোর ছবি Drive-এর `Mess Memo Images` ফোল্ডারে থাকে এবং পাবলিক শেয়ার করা হয় না, অ্যাপ নিজেই দেখায়।
-
-## সাধারণ প্রশ্ন
-
-- **পাসওয়ার্ড ভুলে গেছে?** অ্যাডমিন → সদস্য ও রোল → ✏️ সম্পাদনা → নতুন পাসওয়ার্ড দিন।
-- **কেউ মেস ছেড়ে গেছে?** তার অবস্থা "বন্ধ" করে দিন। পুরনো হিসাব থেকে যাবে, কিন্তু সে আর লগইন করতে পারবে না।
-- **আগের মাসের বাকি/অগ্রিম?** প্রতিটি মাসের হিসাব আলাদা। নতুন মাসে ওই সদস্যের নামে + বা − জমা দিয়ে সমন্বয় করুন।
-- **৫ বার ভুল পাসওয়ার্ড দিলে** ওই ইউজারনেম ১০ মিনিটের জন্য লক থাকে।
-
-## ফাইল
-
-```
-deploy/
-  Code.gs           ⭐ এক ফাইলে পুরো অ্যাপ — Apps Script-এ শুধু এটাই পেস্ট করুন
-tools/
-  build.js          apps-script/ থেকে deploy/Code.gs বানায়
-apps-script/        সোর্স কোড (আলাদা আলাদা ফাইল)
-  appsscript.json   টাইমজোন ও Web App সেটিংস (clasp ব্যবহার করলে)
-  Code.gs           doGet, API রাউটার, setup()
-  Db.gs             Google Sheet ডাটাবেস সহায়ক, সেটিংস, তারিখ
-  Auth.gs           লগইন, টোকেন, পাসওয়ার্ড, সদস্য ব্যবস্থাপনা
-  Meals.gs          মিল এন্ট্রি, কাটঅফ সময়, অটো-মিল ট্রিগার
-  Finance.gs        খরচ, জমা, মেমো ও ছবি (Drive)
-  Duties.gs         বাজার ও পরিষ্কারের ডিউটি, রোস্টার
-  Report.gs         মাসিক হিসাব ও ড্যাশবোর্ড
-  Index.html        পেজের কাঠামো
-  Styles.html       ডিজাইন (মোবাইল + ডার্ক মোড)
-  JsCore.html       API কল, লগইন, নেভিগেশন
-  JsPages.html      হোম, আমার মিল, মেমো, ডিউটি, রিপোর্ট, প্রোফাইল
-  JsManage.html     মিল এন্ট্রি, খরচ, জমা, মেমো যাচাই, সদস্য, সেটিংস
-```
+Using [clasp](https://github.com/google/clasp) instead of copy-paste: create `.clasp.json` with `{ "scriptId": "<SCRIPT_ID>", "rootDir": "apps-script" }`, then `clasp login` and `clasp push`.

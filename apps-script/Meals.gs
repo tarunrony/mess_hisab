@@ -1,12 +1,12 @@
 /**
- * মিল: প্রতিদিন দুই বেলা — দুপুর (lunch) ও রাত (dinner)।
- * Meals শিটে প্রতি সদস্য প্রতি দিনের জন্য একটি সারি: key = তারিখ_ইউজারআইডি
+ * Meals: two per day — lunch and dinner.
+ * The Meals sheet has one row per member per day: key = date_userId
  *
- * নিয়ম:
- *  - সদস্য শুধু নিজের মিল দিতে/বন্ধ করতে পারবে, আজকের মিল কাটঅফ সময়ের আগ পর্যন্ত।
- *  - ম্যানেজার/অ্যাডমিন যেকোনো দিনের যেকোনো সদস্যের মিল ঠিক করতে পারবে।
- *  - "ডিফল্ট মিল" চালু থাকলে প্রতিদিন রাত ১২:৩০-এ আজ ও কালকের মিল আপনাআপনি বসে যায়।
- *    তার পরের দিনগুলোতে এন্ট্রি না থাকলে ডিফল্টটাই দেখানো হয়।
+ * Rules:
+ *  - A member can only change their own meals; today's meal only until the cut-off time.
+ *  - Manager/admin can change any member's meal on any day.
+ *  - With "default meals" on, today's and tomorrow's meals are filled in automatically
+ *    every night at ~12:30 AM. Later days without an entry show the default.
  */
 
 function mealsIndex_() {
@@ -27,7 +27,7 @@ function slotLocked_(date, slot, settings) {
   return nowHM_() >= (slot === 'lunch' ? settings.lunchCutoff : settings.dinnerCutoff);
 }
 
-/** এন্ট্রি না থাকলে কী দেখানো হবে */
+/** What to show when there is no entry yet */
 function currentMeal_(date, user, ex) {
   if (ex) return { lunch: ex.lunch, dinner: ex.dinner, isDefault: false };
   if (date > addDays_(today_(), 1)) {
@@ -36,7 +36,7 @@ function currentMeal_(date, user, ex) {
   return { lunch: 0, dinner: 0, isDefault: false };
 }
 
-/** changes = [{date, userId, lunch, dinner}] — নতুন হলে যোগ, পুরনো হলে আপডেট */
+/** changes = [{date, userId, lunch, dinner}] — inserts new rows, updates existing ones */
 function upsertMeals_(changes, by) {
   const map = mealsIndex_();
   const now = nowStr_();
@@ -61,8 +61,8 @@ function upsertMeals_(changes, by) {
 }
 
 /**
- * ডিফল্ট মিল বসানো। overwriteAuto = true হলে আগে আপনাআপনি বসানো (কেউ বদলায়নি এমন)
- * এন্ট্রিও নতুন ডিফল্ট অনুযায়ী বদলাবে।
+ * Fills in default meals. With overwriteAuto = true, entries that were filled
+ * automatically (and not changed by anyone since) follow the new defaults too.
  */
 function fillAutoMeals_(dates, onlyUserId, overwriteAuto) {
   const users = readAll_('Users').filter(function (u) {
@@ -82,7 +82,7 @@ function fillAutoMeals_(dates, onlyUserId, overwriteAuto) {
   upsertMeals_(changes, 'auto');
 }
 
-/** টাইম ট্রিগার (setup() তৈরি করে) — প্রতিদিন রাত ~১২:৩০ */
+/** Time-driven trigger (created automatically) — every night ~12:30 AM */
 function autoMealJob() {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -94,14 +94,14 @@ function autoMealJob() {
   }
 }
 
-/* ---------- সদস্য: নিজের মিল ---------- */
+/* ---------- Member: own meals ---------- */
 
 function mealsMy_(d, me) {
   const today = today_();
   const from = isYMD_(d.from) ? d.from : today;
   const to = isYMD_(d.to) ? d.to : addDays_(from, 6);
   const n = daysBetween_(from, to);
-  if (n < 0 || n > 62) throw new Error('তারিখের সীমা সঠিক নয়');
+  if (n < 0 || n > 62) throw new Error('Date range is not valid');
 
   const s = getSettings_();
   const map = mealsIndex_();
@@ -121,7 +121,7 @@ function mealsMy_(d, me) {
   };
 }
 
-/** এক দিনের মিল: { date, lunch, dinner } — যেটা পাঠানো হয়নি সেটা অপরিবর্তিত */
+/** One day: { date, lunch, dinner } — anything not sent stays unchanged */
 function mealsSetMy_(d, me) {
   const date = requireDate_(d.date);
   const s = getSettings_();
@@ -134,7 +134,7 @@ function mealsSetMy_(d, me) {
     const v = clampMeal_(d[slot], max);
     if (v === cur[slot]) return;
     if (slotLocked_(date, slot, s)) {
-      throw new Error((slot === 'lunch' ? 'দুপুরের' : 'রাতের') + ' মিল পরিবর্তনের সময় শেষ। ম্যানেজারকে বলুন।');
+      throw new Error((slot === 'lunch' ? 'Lunch' : 'Dinner') + ' can no longer be changed for this day. Please ask the manager.');
     }
     next[slot] = v;
   });
@@ -146,12 +146,12 @@ function mealsSetMy_(d, me) {
   };
 }
 
-/** একাধিক দিনে একসাথে (যেমন বাড়ি যাচ্ছি — ৫ দিন মিল বন্ধ)। বন্ধ হয়ে যাওয়া বেলা বাদ যায়। */
+/** Many days at once (e.g. going home — meals off for 5 days). Closed slots are skipped. */
 function mealsSetMyRange_(d, me) {
-  const from = requireDate_(d.from, 'শুরুর তারিখ');
-  const to = requireDate_(d.to, 'শেষের তারিখ');
+  const from = requireDate_(d.from, 'Start date');
+  const to = requireDate_(d.to, 'End date');
   const n = daysBetween_(from, to);
-  if (n < 0 || n > 62) throw new Error('সর্বোচ্চ ৬২ দিনের জন্য একসাথে দেওয়া যাবে');
+  if (n < 0 || n > 62) throw new Error('You can set at most 62 days at once');
 
   const s = getSettings_();
   const max = Number(s.maxGuestMeal) || 5;
@@ -178,7 +178,7 @@ function mealsSetMyRange_(d, me) {
   return { changed: changes.length, skipped: skipped };
 }
 
-/* ---------- ম্যানেজার: দিনভিত্তিক সবার মিল ---------- */
+/* ---------- Manager: everyone's meals for a day ---------- */
 
 function mealsDay_(d) {
   const date = isYMD_(d.date) ? d.date : today_();

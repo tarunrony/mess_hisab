@@ -1,10 +1,11 @@
 /**
- * খরচ (বাজার / সাধারণ), জমা (ডিপোজিট) এবং বাজারের মেমো।
+ * Expenses (bazar / shared), deposits and bazar memos (receipts).
  *
- * খরচের ধরন:
- *   bazar  — মিলের বাজার; মিল রেট = মোট বাজার ÷ মোট মিল
- *   shared — সাধারণ খরচ (গ্যাস, খালা, বিদ্যুৎ ইত্যাদি); সবার মধ্যে সমান ভাগ
- * paidBy: ফাঁকা = মেসের ফান্ড থেকে; সদস্যের id = সদস্য নিজের টাকায় করেছে (তার জমায় যোগ হবে)
+ * Expense types:
+ *   bazar  — groceries for meals; meal rate = total bazar ÷ total meals
+ *   shared — common costs (gas, maid, electricity...), split equally between members
+ * paidBy: empty = paid from the mess fund; a member id = paid from that member's
+ *         own pocket (counted as their deposit)
  */
 
 const EXPENSE_TYPES = ['bazar', 'shared'];
@@ -23,24 +24,24 @@ function strip_(r) {
   return o;
 }
 
-/* ---------- ছবি (Google Drive) ---------- */
+/* ---------- Photos (Google Drive) ---------- */
 
 function memoFolder_() {
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty('FOLDER_ID');
   if (id) {
-    try { return DriveApp.getFolderById(id); } catch (e) { /* ফোল্ডার মুছে গেছে, নতুন বানাই */ }
+    try { return DriveApp.getFolderById(id); } catch (e) { /* folder was deleted, make a new one */ }
   }
   const folder = DriveApp.createFolder('Mess Memo Images');
   props.setProperty('FOLDER_ID', folder.getId());
   return folder;
 }
 
-/** img = { data: base64, mime } — ফাইল আইডি ফেরত দেয় */
+/** img = { data: base64, mime } — returns the Drive file id */
 function saveImage_(img, prefix) {
   if (!img || !img.data) return '';
   const bytes = Utilities.base64Decode(String(img.data));
-  if (bytes.length > 5 * 1024 * 1024) throw new Error('ছবি খুব বড় (সর্বোচ্চ ৫ MB)');
+  if (bytes.length > 5 * 1024 * 1024) throw new Error('Photo is too large (max 5 MB)');
   const mime = /^image\/(jpeg|png|webp)$/.test(img.mime) ? img.mime : 'image/jpeg';
   const ext = mime.split('/')[1].replace('jpeg', 'jpg');
   const file = memoFolder_().createFile(Utilities.newBlob(bytes, mime, prefix + '_' + nowStr_().replace(/[: ]/g, '-') + '.' + ext));
@@ -49,21 +50,21 @@ function saveImage_(img, prefix) {
 
 function trashFile_(fileId) {
   if (!fileId) return;
-  try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) { /* আগেই মুছে গেছে */ }
+  try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) { /* already gone */ }
 }
 
 /**
- * অ্যাপের ভেতরে ছবি দেখানো — শুধু শিটে থাকা মেমো/খরচের ছবি, অন্য কোনো Drive ফাইল নয়।
- * { kind: 'memo' | 'expense', id }
+ * Shows a photo inside the app — only photos of memos/expenses in the sheet,
+ * never any other Drive file. { kind: 'memo' | 'expense', id }
  */
 function imageGet_(d) {
   const row = findById_(d.kind === 'expense' ? 'Expenses' : 'Memos', d.id);
-  if (!row || !row.fileId) throw new Error('ছবি পাওয়া যায়নি');
+  if (!row || !row.fileId) throw new Error('Photo not found');
   const blob = DriveApp.getFileById(row.fileId).getBlob();
   return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
 }
 
-/* ---------- খরচ ---------- */
+/* ---------- Expenses ---------- */
 
 function expensesList_(d) {
   const month = requireMonth_(d.month);
@@ -89,7 +90,7 @@ function expensesSave_(d, me) {
 
   if (d.id) {
     const e = findById_('Expenses', d.id);
-    if (!e) throw new Error('খরচ পাওয়া যায়নি');
+    if (!e) throw new Error('Expense not found');
     if (fileId) { trashFile_(e.fileId); e.fileId = fileId; }
     e.date = date; e.type = type; e.amount = amount; e.description = description; e.paidBy = paidBy;
     updateRow_('Expenses', e._row, e);
@@ -104,9 +105,9 @@ function expensesSave_(d, me) {
 
 function expensesDelete_(d) {
   const e = findById_('Expenses', d.id);
-  if (!e) throw new Error('খরচ পাওয়া যায়নি');
+  if (!e) throw new Error('Expense not found');
   if (e.memoId) {
-    // মেমো থেকে আসা খরচ মুছলে মেমোটা আবার "অপেক্ষমাণ" হয়ে যায়, ছবি মেমোতেই থাকে
+    // Deleting an expense that came from a memo puts the memo back to "pending"; the photo stays with the memo
     const m = findById_('Memos', e.memoId);
     if (m) { m.status = 'pending'; m.expenseId = ''; m.reviewedBy = ''; updateRow_('Memos', m._row, m); }
   } else {
@@ -117,7 +118,7 @@ function expensesDelete_(d) {
   return expensesList_({ month: month });
 }
 
-/* ---------- জমা ---------- */
+/* ---------- Deposits ---------- */
 
 function depositsList_(d, me) {
   const month = requireMonth_(d.month);
@@ -133,16 +134,16 @@ function depositsList_(d, me) {
     });
 }
 
-/** { id?, date, userId, amount, note } — ঋণাত্মক টাকা = সমন্বয় / ফেরত */
+/** { id?, date, userId, amount, note } — a negative amount = refund / adjustment */
 function depositsSave_(d, me) {
   const date = requireDate_(d.date);
-  if (!findById_('Users', d.userId)) throw new Error('সদস্য বেছে নিন');
+  if (!findById_('Users', d.userId)) throw new Error('Choose a member');
   const amount = requireAmount_(d.amount);
   const note = clean_(d.note, 200);
 
   if (d.id) {
     const r = findById_('Deposits', d.id);
-    if (!r) throw new Error('জমা পাওয়া যায়নি');
+    if (!r) throw new Error('Deposit not found');
     r.date = date; r.userId = d.userId; r.amount = amount; r.note = note;
     updateRow_('Deposits', r._row, r);
   } else {
@@ -155,12 +156,12 @@ function depositsSave_(d, me) {
 
 function depositsDelete_(d, me) {
   const r = findById_('Deposits', d.id);
-  if (!r) throw new Error('জমা পাওয়া যায়নি');
+  if (!r) throw new Error('Deposit not found');
   deleteRow_('Deposits', r._row);
   return depositsList_({ month: r.date.slice(0, 7) }, me);
 }
 
-/* ---------- বাজারের মেমো ---------- */
+/* ---------- Bazar memos ---------- */
 
 function memosList_(d, me) {
   const month = requireMonth_(d.month);
@@ -179,12 +180,12 @@ function memosList_(d, me) {
     });
 }
 
-/** সদস্য বাজার করে মেমোর ছবি দেয়: { date, amount, note, image } */
+/** A member does the bazar and uploads the memo photo: { date, amount, note, image } */
 function memosUpload_(d, me) {
   const date = requireDate_(d.date);
   const amount = requireAmount_(d.amount);
-  if (amount < 0) throw new Error('সঠিক টাকার পরিমাণ দিন');
-  if (!d.image || !d.image.data) throw new Error('মেমোর ছবি দিন');
+  if (amount < 0) throw new Error('Enter a valid amount');
+  if (!d.image || !d.image.data) throw new Error('Add a photo of the memo');
   const fileId = saveImage_(d.image, 'memo_' + me.username);
 
   insertRows_('Memos', [{
@@ -192,7 +193,7 @@ function memosUpload_(d, me) {
     fileId: fileId, status: 'pending', expenseId: '', reviewedBy: '', createdAt: nowStr_()
   }]);
 
-  // ওই দিনে এই সদস্যের বাজার ডিউটি থাকলে সেটা "সম্পন্ন" করে দিই
+  // If this member had a bazar duty that day, mark it done
   readAll_('Duties').forEach(function (t) {
     if (t.type === 'bazar' && t.date === date && t.userId === me.id && t.status !== 'done') {
       t.status = 'done'; t.updatedBy = me.id;
@@ -203,21 +204,21 @@ function memosUpload_(d, me) {
 }
 
 /**
- * ম্যানেজার মেমো যাচাই করে:
+ * Manager reviews a memo:
  * { id, action: 'approve'|'reject', amount?, description?, paidByMember: bool, type? }
- * অনুমোদন করলে খরচের তালিকায় যোগ হয়।
+ * Approving adds it to the expenses.
  */
 function memosReview_(d, me) {
   const m = findById_('Memos', d.id);
-  if (!m) throw new Error('মেমো পাওয়া যায়নি');
-  if (m.status !== 'pending') throw new Error('এই মেমো আগেই যাচাই করা হয়েছে');
+  if (!m) throw new Error('Memo not found');
+  if (m.status !== 'pending') throw new Error('This memo was already reviewed');
 
   if (d.action === 'approve') {
     const amount = d.amount ? requireAmount_(d.amount) : m.amount;
     const expenseId = uid_();
     insertRows_('Expenses', [{
       id: expenseId, date: m.date, type: EXPENSE_TYPES.indexOf(d.type) > -1 ? d.type : 'bazar',
-      amount: amount, description: clean_(d.description || m.note || 'বাজার (মেমো)', 300),
+      amount: amount, description: clean_(d.description || m.note || 'Bazar (memo)', 300),
       paidBy: d.paidByMember ? m.userId : '', fileId: m.fileId, memoId: m.id,
       addedBy: me.id, createdAt: nowStr_()
     }]);
@@ -232,13 +233,13 @@ function memosReview_(d, me) {
   return memosList_({ month: m.date.slice(0, 7) }, me);
 }
 
-/** সদস্য নিজের অপেক্ষমাণ মেমো মুছতে পারে; ম্যানেজার অনুমোদিত নয় এমন যেকোনো মেমো */
+/** Members can delete their own pending memos; managers any memo that is not approved */
 function memosDelete_(d, me) {
   const m = findById_('Memos', d.id);
-  if (!m) throw new Error('মেমো পাওয়া যায়নি');
+  if (!m) throw new Error('Memo not found');
   const isMgr = me.role !== 'member';
-  if (!isMgr && (m.userId !== me.id || m.status !== 'pending')) throw new Error('শুধু নিজের অপেক্ষমাণ মেমো মুছতে পারবেন');
-  if (m.status === 'approved') throw new Error('অনুমোদিত মেমো মুছতে আগে খরচ থেকে এন্ট্রিটি মুছুন');
+  if (!isMgr && (m.userId !== me.id || m.status !== 'pending')) throw new Error('You can only delete your own pending memos');
+  if (m.status === 'approved') throw new Error('To delete an approved memo, delete its expense first');
   trashFile_(m.fileId);
   deleteRow_('Memos', m._row);
   return memosList_({ month: m.date.slice(0, 7) }, me);

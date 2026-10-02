@@ -1,47 +1,48 @@
 /**
  * ===================================================================
- *  মেস মিল হিসাব — এক ফাইলে পুরো অ্যাপ (Google Apps Script)
+ *  Mess Meal Manager — the whole app in one file (Google Apps Script)
  * ===================================================================
  *
- *  কীভাবে চালু করবেন:
- *   1. Google Sheet খুলুন → Extensions → Apps Script
- *   2. Code.gs-এর সব লেখা মুছে এই ফাইলের পুরোটা পেস্ট করুন → Save (Ctrl+S)
- *   3. উপরের ফাংশন তালিকা থেকে "setup" বেছে Run চাপুন → অনুমতি দিন
- *      (Advanced → Go to ... (unsafe) → Allow)
- *   4. Deploy → New deployment → ⚙️ Web app
- *        Execute as: Me   |   Who has access: Anyone   → Deploy
- *   5. Web app URL খুলে প্রথমে অ্যাডমিন অ্যাকাউন্ট বানান, তারপর সদস্য যোগ করুন
+ *  How to install:
+ *   1. Open your Google Sheet → Extensions → Apps Script
+ *   2. Delete everything in Code.gs, paste this whole file → Save (Ctrl+S)
+ *   3. Deploy → New deployment → ⚙️ Web app
+ *        Execute as: Me   |   Who has access: Anyone   → Deploy → Authorize
+ *   4. Open the Web app URL and create the admin account. Done!
  *
- *  কোড বদলালে: Deploy → Manage deployments → ✏️ → Version: New version → Deploy
- *  (তাহলে URL একই থাকে)
+ *  Updating later: paste the new file, then
+ *  Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy
+ *  (this keeps the same URL — do NOT make a "New deployment")
  *
- *  এই ফাইলটি apps-script/ ফোল্ডার থেকে "node tools/build.js" দিয়ে তৈরি।
+ *  This file is generated from apps-script/ by "node tools/build.js".
  * ===================================================================
  */
 
 /* ======================= Code.gs ======================= */
 
 /**
- * মেস মিল হিসাব — Google Apps Script ব্যাকএন্ড
+ * Mess Meal Manager — Google Apps Script backend
  *
- * ডাটাবেস: এই স্ক্রিপ্ট যে Google Sheet-এর সাথে যুক্ত (Extensions > Apps Script) সেই শিট।
- * প্রথমবার: এডিটর থেকে setup() ফাংশন একবার চালান, তারপর Web App হিসেবে Deploy করুন।
+ * Database: the Google Sheet this script is attached to (Extensions → Apps Script).
+ * Deploy:   Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).
+ * Sheets, the memo photo folder and the daily auto-meal trigger are created
+ * automatically on first use — running setup() by hand is optional.
  */
 
-const APP_NAME = 'মেস মিল হিসাব';
+const APP_NAME = 'Mess Meal Manager';
 const APP_TZ = 'Asia/Dhaka';
 const TOKEN_DAYS = 30;
 
-/** Web App খুললে মূল পেজ দেখায় */
+/** Serves the app when the Web App URL is opened */
 function doGet() {
   let messName = APP_NAME;
-  try { messName = getSettings_().messName || APP_NAME; } catch (e) { /* setup বাকি */ }
+  try { messName = getSettings_().messName || APP_NAME; } catch (e) { /* first run */ }
   return HtmlService.createHtmlOutput(pageHtml_(messName))
     .setTitle(messName)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover');
 }
 
-/** পুরো পেজ (এই ফাইলের শেষে APP_HTML) — মেসের নাম বসিয়ে ফেরত দেয় */
+/** The full page (APP_HTML at the end of this file) with the mess name filled in */
 function pageHtml_(messName) {
   return APP_HTML.split('{{MESS_NAME}}').join(escapeHtml_(messName));
 }
@@ -53,24 +54,24 @@ function escapeHtml_(s) {
 }
 
 /**
- * ফ্রন্টএন্ড থেকে সব অনুরোধ এখানে আসে (google.script.run.api)।
- * ফেরত দেয়: { ok: true, data } অথবা { ok: false, error }
+ * Every request from the frontend comes here (google.script.run.api or doPost).
+ * Returns { ok: true, data } or { ok: false, error }
  */
 function api(action, token, data) {
   let lock = null;
   try {
     const route = routes_()[action];
-    if (!route) throw new Error('অজানা অনুরোধ: ' + action);
+    if (!route) throw new Error('Unknown request: ' + action);
 
     let user = null;
     if (route.roles) {
       user = authenticate_(token);
-      if (route.roles.indexOf(user.role) === -1) throw new Error('এই কাজের অনুমতি আপনার নেই');
+      if (route.roles.indexOf(user.role) === -1) throw new Error('You do not have permission to do this');
     }
 
     if (route.write) {
       lock = LockService.getScriptLock();
-      if (!lock.tryLock(20000)) throw new Error('সার্ভার ব্যস্ত, একটু পরে আবার চেষ্টা করুন');
+      if (!lock.tryLock(20000)) throw new Error('Server is busy, please try again in a moment');
     }
 
     const payload = data && typeof data === 'object' ? data : {};
@@ -82,15 +83,15 @@ function api(action, token, data) {
   }
 }
 
-/** একই API অন্য জায়গা থেকে (যেমন GitHub Pages) fetch দিয়ে ব্যবহারের জন্য */
+/** Same API over HTTP, used by the Vercel / static-site version */
 function doPost(e) {
   let body = {};
-  try { body = JSON.parse(e.postData.contents); } catch (x) { /* খালি */ }
+  try { body = JSON.parse(e.postData.contents); } catch (x) { /* empty body */ }
   const res = api(body.action, body.token, body.data);
   return ContentService.createTextOutput(JSON.stringify(res)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** কোন অনুরোধ কে করতে পারবে */
+/** Who may call what */
 function routes_() {
   const ALL = ['admin', 'manager', 'member'];
   const MGR = ['admin', 'manager'];
@@ -140,12 +141,12 @@ function routes_() {
 }
 
 /**
- * ⚙️ প্রথমবার একবার চালান (Apps Script এডিটরে ফাংশন বেছে নিয়ে Run)।
- * শিট, গোপন কী, মেমো ফোল্ডার আর প্রতিদিনের অটো-মিল ট্রিগার তৈরি করে।
+ * Optional manual setup (select "setup" in the editor and press Run).
+ * The same things also happen automatically when the first admin is created.
  */
 function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) throw new Error('Google Sheet খুলে Extensions > Apps Script থেকে setup চালান');
+  if (!ss) throw new Error('Open the Google Sheet and run setup from Extensions → Apps Script');
 
   const props = PropertiesService.getScriptProperties();
   props.setProperty('SHEET_ID', ss.getId());
@@ -153,27 +154,31 @@ function setup() {
   props.setProperty('SCHEMA_V', SCHEMA_VERSION);
   secret_();
   memoFolder_();
+  ensureTrigger_();
+  Logger.log('✅ Setup complete. Now use Deploy → New deployment → Web app.');
+}
 
-  const existing = readAll_('Settings').map(function (r) { return r.key; });
-  const missing = Object.keys(DEFAULT_SETTINGS)
-    .filter(function (k) { return existing.indexOf(k) === -1; })
-    .map(function (k) { return { key: k, value: DEFAULT_SETTINGS[k] }; });
-  insertRows_('Settings', missing);
-
-  ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'autoMealJob') ScriptApp.deleteTrigger(t);
+/** Daily job (~12:30 AM) that fills in default meals for today and tomorrow */
+function ensureTrigger_() {
+  const exists = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === 'autoMealJob';
   });
-  ScriptApp.newTrigger('autoMealJob').timeBased().everyDays(1).atHour(0).nearMinute(30).inTimezone(APP_TZ).create();
+  if (!exists) {
+    ScriptApp.newTrigger('autoMealJob').timeBased().everyDays(1).atHour(0).nearMinute(30).inTimezone(APP_TZ).create();
+  }
+}
 
-  Logger.log('✅ Setup সম্পন্ন। এখন Deploy > New deployment > Web app করুন।');
+/** Web App URL, used for the "share login details" message */
+function appUrl_() {
+  try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
 }
 
 
 /* ======================= Db.gs ======================= */
 
 /**
- * Google Sheet-কে ডাটাবেস হিসেবে ব্যবহারের সহায়ক ফাংশন।
- * প্রতিটি শিটের প্রথম সারি হেডার; প্রথম কলাম ফাঁকা থাকলে সারিটি উপেক্ষা করা হয়।
+ * Helpers for using a Google Sheet as the database.
+ * Row 1 of every sheet is the header; rows whose first cell is empty are ignored.
  */
 
 const SCHEMA_VERSION = '1';
@@ -188,11 +193,11 @@ const SCHEMA = {
   Settings: ['key', 'value']
 };
 
-// সংখ্যা হিসেবে রাখা কলাম; বাকি সব টেক্সট (যাতে ফোন নম্বর, তারিখ, সময় বদলে না যায়)
+// Columns stored as numbers; everything else is plain text so phone numbers, dates and times stay as typed
 const NUMERIC_FORMAT = { lunch: '0', dinner: '0', amount: '#,##0.00' };
 
 const DEFAULT_SETTINGS = {
-  messName: 'আমাদের মেস',
+  messName: 'Our Mess',
   lunchCutoff: '10:00',
   dinnerCutoff: '17:00',
   maxGuestMeal: '5'
@@ -206,7 +211,7 @@ function getSS_() {
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty('SHEET_ID');
   _ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
-  if (!_ss) throw new Error('ডাটাবেস (Google Sheet) পাওয়া যায়নি। Apps Script এডিটর থেকে setup() চালান।');
+  if (!_ss) throw new Error('Database (Google Sheet) not found. Create this script from the Sheet via Extensions → Apps Script.');
   if (!id) props.setProperty('SHEET_ID', _ss.getId());
   if (props.getProperty('SCHEMA_V') !== SCHEMA_VERSION) {
     ensureSheets_(_ss);
@@ -226,7 +231,7 @@ function ensureSheets_(ss) {
       .setFontColor('#ffffff');
     sh.setFrozenRows(1);
   });
-  // নতুন শিটের ফাঁকা ডিফল্ট ট্যাব মুছে ফেলি
+  // Remove the empty default tab of a new spreadsheet
   ss.getSheets().forEach(function (sh) {
     if (!SCHEMA[sh.getName()] && sh.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sh);
   });
@@ -234,11 +239,11 @@ function ensureSheets_(ss) {
 
 function sheet_(name) {
   const sh = getSS_().getSheetByName(name);
-  if (!sh) throw new Error('শিট পাওয়া যায়নি: ' + name + ' — setup() চালান');
+  if (!sh) throw new Error('Sheet not found: ' + name + ' — run setup()');
   return sh;
 }
 
-/** পুরো টেবিল অবজেক্টের তালিকা হিসেবে পড়ে (_row = শিটের সারি নম্বর) */
+/** Reads a whole table as a list of objects (_row = row number in the sheet) */
 function readAll_(name) {
   if (_tableCache[name]) return _tableCache[name];
   const sh = sheet_(name);
@@ -290,13 +295,13 @@ function insertRows_(name, objs) {
 }
 
 function updateRow_(name, rowIndex, obj) {
-  if (!rowIndex) throw new Error('সারি পাওয়া যায়নি');
+  if (!rowIndex) throw new Error('Row not found');
   sheet_(name).getRange(rowIndex, 1, 1, SCHEMA[name].length).setValues([toRow_(name, obj)]);
   delete _tableCache[name];
 }
 
 function deleteRow_(name, rowIndex) {
-  if (!rowIndex) throw new Error('সারি পাওয়া যায়নি');
+  if (!rowIndex) throw new Error('Row not found');
   sheet_(name).deleteRow(rowIndex);
   delete _tableCache[name];
 }
@@ -307,7 +312,7 @@ function findById_(name, id) {
   return null;
 }
 
-/* ---------- সেটিংস ---------- */
+/* ---------- Settings ---------- */
 
 function getSettings_() {
   const s = {};
@@ -324,10 +329,10 @@ function settingsSave_(d) {
     if (d[k] === undefined) return;
     let v = String(d[k]).trim();
     if ((k === 'lunchCutoff' || k === 'dinnerCutoff') && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) {
-      throw new Error('সময় HH:MM ফরম্যাটে দিন (যেমন 10:00)');
+      throw new Error('Enter the time as HH:MM (for example 10:00)');
     }
     if (k === 'maxGuestMeal') v = String(Math.max(1, Math.min(20, parseInt(v, 10) || 1)));
-    if (k === 'messName' && !v) throw new Error('মেসের নাম দিন');
+    if (k === 'messName' && !v) throw new Error('Enter the mess name');
     const ex = rows.filter(function (r) { return r.key === k; })[0];
     if (ex) updateRow_('Settings', ex._row, { key: k, value: v });
     else inserts.push({ key: k, value: v });
@@ -336,7 +341,7 @@ function settingsSave_(d) {
   return getSettings_();
 }
 
-/* ---------- তারিখ ও সাধারণ সহায়ক ---------- */
+/* ---------- Dates and small helpers ---------- */
 
 function tz_() { return APP_TZ; }
 function today_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd'); }
@@ -358,17 +363,17 @@ function addDays_(s, n) {
 function daysBetween_(a, b) { return Math.round((parseYMD_(b) - parseYMD_(a)) / 864e5); }
 
 function requireDate_(s, label) {
-  if (!isYMD_(s)) throw new Error((label || 'তারিখ') + ' সঠিক নয়');
+  if (!isYMD_(s)) throw new Error((label || 'Date') + ' is not valid');
   return s;
 }
 function requireMonth_(s) {
   if (!s) return today_().slice(0, 7);
-  if (!isMonth_(s)) throw new Error('মাস সঠিক নয়');
+  if (!isMonth_(s)) throw new Error('Month is not valid');
   return s;
 }
 function requireAmount_(v) {
   const n = Math.round(Number(v) * 100) / 100;
-  if (!isFinite(n) || n === 0) throw new Error('সঠিক টাকার পরিমাণ দিন');
+  if (!isFinite(n) || n === 0) throw new Error('Enter a valid amount');
   return n;
 }
 function clean_(s, max) { return String(s === undefined || s === null ? '' : s).trim().slice(0, max || 200); }
@@ -379,8 +384,8 @@ function round2_(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 /* ======================= Auth.gs ======================= */
 
 /**
- * লগইন, টোকেন, প্রোফাইল এবং সদস্য (ইউজার) ব্যবস্থাপনা।
- * পাসওয়ার্ড SHA-256 + salt দিয়ে হ্যাশ করে রাখা হয়, আসল পাসওয়ার্ড কোথাও থাকে না।
+ * Login, tokens, profile and member (user) management.
+ * Passwords are stored only as SHA-256 + salt hashes, never in plain text.
  */
 
 const ROLES = ['admin', 'manager', 'member'];
@@ -405,14 +410,14 @@ function sign_(text) {
   return Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
 }
 
-// পাসওয়ার্ড বদলালে পুরনো টোকেন আপনাআপনি বাতিল হয়, কারণ সিগনেচারে passHash থাকে
+// The signature includes passHash, so changing a password logs out old sessions
 function makeToken_(user) {
   const payload = user.id + '.' + (Date.now() + TOKEN_DAYS * 864e5);
   return payload + '.' + sign_(payload + '|' + user.passHash);
 }
 
 function authenticate_(token) {
-  const fail = new Error('AUTH: সেশন শেষ, আবার লগইন করুন');
+  const fail = new Error('AUTH: Your session has ended, please log in again');
   const parts = String(token || '').split('.');
   if (parts.length !== 3 || Number(parts[1]) < Date.now()) throw fail;
   const user = findById_('Users', parts[0]);
@@ -428,33 +433,46 @@ function publicUser_(u) {
   };
 }
 
+/** What the app needs after logging in */
+function session_(user, withToken) {
+  const out = { user: publicUser_(user), settings: getSettings_(), appUrl: appUrl_() };
+  if (withToken) out.token = makeToken_(user);
+  return out;
+}
+
 function normUsername_(s) {
   const u = String(s || '').trim().toLowerCase();
-  if (!/^[a-z0-9_.@-]{3,40}$/.test(u)) throw new Error('ইউজারনেম ৩+ অক্ষরের হবে (ইংরেজি অক্ষর/সংখ্যা, যেমন: rahim বা 01712345678)');
+  if (!/^[a-z0-9_.@-]{3,40}$/.test(u)) {
+    throw new Error('Username must be 3+ characters: English letters or numbers (e.g. rahim or 01712345678)');
+  }
   return u;
 }
 
 function checkPassword_(p) {
-  if (String(p || '').length < 6) throw new Error('পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে');
+  if (String(p || '').length < 4) throw new Error('Password must be at least 4 characters');
   return String(p);
 }
 
-/* ---------- পাবলিক (লগইন ছাড়া) ---------- */
+/* ---------- Public (no login needed) ---------- */
 
 function authStatus_() {
   return { needsSetup: readAll_('Users').length === 0, messName: getSettings_().messName };
 }
 
-/** প্রথম ব্যবহারকারী তৈরি — শুধু তখনই কাজ করে যখন কোনো ইউজার নেই */
+/** Creates the very first user (admin). Works only while there are no users. */
 function setupAdmin_(d) {
-  if (readAll_('Users').length > 0) throw new Error('অ্যাডমিন আগেই তৈরি হয়েছে, লগইন করুন');
+  if (readAll_('Users').length > 0) throw new Error('The admin already exists, please log in');
   const user = newUser_({
     name: d.name, username: d.username, password: d.password,
     role: 'admin', phone: d.phone, room: d.room
   });
   if (d.messName) settingsSave_({ messName: d.messName });
   insertRows_('Users', [user]);
-  return { token: makeToken_(user), user: publicUser_(user), settings: getSettings_() };
+
+  // First-run setup that used to need a manual setup() run
+  try { secret_(); memoFolder_(); ensureTrigger_(); } catch (e) { console.warn('Auto setup: ' + e.message); }
+
+  return session_(user, true);
 }
 
 function login_(d) {
@@ -462,33 +480,33 @@ function login_(d) {
   const cache = CacheService.getScriptCache();
   const failKey = 'fail_' + username;
   const fails = Number(cache.get(failKey) || 0);
-  if (fails >= 5) throw new Error('অনেকবার ভুল চেষ্টা হয়েছে। ১০ মিনিট পরে আবার চেষ্টা করুন।');
+  if (fails >= 5) throw new Error('Too many wrong attempts. Please try again in 30 minutes.');
 
   const user = readAll_('Users').filter(function (u) { return u.username === username; })[0];
   if (!user || hash_(String(d.password || ''), user.salt) !== user.passHash) {
-    cache.put(failKey, String(fails + 1), 600);
-    throw new Error('ইউজারনেম বা পাসওয়ার্ড ভুল');
+    cache.put(failKey, String(fails + 1), 1800);
+    throw new Error('Username or password is incorrect');
   }
-  if (user.active !== '1') throw new Error('আপনার অ্যাকাউন্ট বন্ধ আছে, অ্যাডমিনের সাথে যোগাযোগ করুন');
+  if (user.active !== '1') throw new Error('Your account is deactivated. Please contact the admin.');
   cache.remove(failKey);
-  return { token: makeToken_(user), user: publicUser_(user), settings: getSettings_() };
+  return session_(user, true);
 }
 
-/* ---------- নিজের প্রোফাইল ---------- */
+/* ---------- Own profile ---------- */
 
 function meGet_(d, me) {
-  return { user: publicUser_(me), settings: getSettings_() };
+  return session_(me, false);
 }
 
 function changePassword_(d, me) {
-  if (hash_(String(d.oldPassword || ''), me.salt) !== me.passHash) throw new Error('বর্তমান পাসওয়ার্ড ভুল');
+  if (hash_(String(d.oldPassword || ''), me.salt) !== me.passHash) throw new Error('Current password is incorrect');
   me.salt = uid_();
   me.passHash = hash_(checkPassword_(d.newPassword), me.salt);
   updateRow_('Users', me._row, me);
   return { token: makeToken_(me) };
 }
 
-/** ডিফল্ট মিল (প্রতিদিন আপনাআপনি চালু থাকবে কিনা) */
+/** Default meals: whether meals are switched on automatically every day */
 function savePrefs_(d, me) {
   me.autoLunch = d.autoLunch ? '1' : '0';
   me.autoDinner = d.autoDinner ? '1' : '0';
@@ -497,13 +515,13 @@ function savePrefs_(d, me) {
   return publicUser_(me);
 }
 
-/* ---------- সদস্য ব্যবস্থাপনা (অ্যাডমিন) ---------- */
+/* ---------- Member management (admin) ---------- */
 
 function newUser_(d) {
   const salt = uid_();
   const role = ROLES.indexOf(d.role) > -1 ? d.role : 'member';
   const name = clean_(d.name, 60);
-  if (!name) throw new Error('নাম দিন');
+  if (!name) throw new Error('Enter a name');
   return {
     id: uid_(), name: name, username: normUsername_(d.username),
     passHash: hash_(checkPassword_(d.password), salt), salt: salt, role: role,
@@ -521,7 +539,7 @@ function usersSave_(d, me) {
   const users = readAll_('Users');
   const username = normUsername_(d.username);
   const taken = users.filter(function (u) { return u.username === username && u.id !== d.id; })[0];
-  if (taken) throw new Error('এই ইউজারনেম আগেই ব্যবহার হয়েছে');
+  if (taken) throw new Error('This username is already taken');
 
   if (!d.id) {
     const user = newUser_(d);
@@ -531,14 +549,14 @@ function usersSave_(d, me) {
   }
 
   const u = users.filter(function (x) { return x.id === d.id; })[0];
-  if (!u) throw new Error('সদস্য পাওয়া যায়নি');
+  if (!u) throw new Error('Member not found');
   const role = ROLES.indexOf(d.role) > -1 ? d.role : u.role;
   const active = d.active === '0' ? '0' : '1';
   if (u.id === me.id && (role !== 'admin' || active !== '1')) {
-    throw new Error('নিজের অ্যাডমিন রোল বা অ্যাকাউন্ট বন্ধ করা যাবে না');
+    throw new Error('You cannot remove your own admin role or deactivate your own account');
   }
   const name = clean_(d.name, 60);
-  if (!name) throw new Error('নাম দিন');
+  if (!name) throw new Error('Enter a name');
 
   u.name = name;
   u.username = username;
@@ -564,14 +582,14 @@ function nameMap_() {
 /* ======================= Meals.gs ======================= */
 
 /**
- * মিল: প্রতিদিন দুই বেলা — দুপুর (lunch) ও রাত (dinner)।
- * Meals শিটে প্রতি সদস্য প্রতি দিনের জন্য একটি সারি: key = তারিখ_ইউজারআইডি
+ * Meals: two per day — lunch and dinner.
+ * The Meals sheet has one row per member per day: key = date_userId
  *
- * নিয়ম:
- *  - সদস্য শুধু নিজের মিল দিতে/বন্ধ করতে পারবে, আজকের মিল কাটঅফ সময়ের আগ পর্যন্ত।
- *  - ম্যানেজার/অ্যাডমিন যেকোনো দিনের যেকোনো সদস্যের মিল ঠিক করতে পারবে।
- *  - "ডিফল্ট মিল" চালু থাকলে প্রতিদিন রাত ১২:৩০-এ আজ ও কালকের মিল আপনাআপনি বসে যায়।
- *    তার পরের দিনগুলোতে এন্ট্রি না থাকলে ডিফল্টটাই দেখানো হয়।
+ * Rules:
+ *  - A member can only change their own meals; today's meal only until the cut-off time.
+ *  - Manager/admin can change any member's meal on any day.
+ *  - With "default meals" on, today's and tomorrow's meals are filled in automatically
+ *    every night at ~12:30 AM. Later days without an entry show the default.
  */
 
 function mealsIndex_() {
@@ -592,7 +610,7 @@ function slotLocked_(date, slot, settings) {
   return nowHM_() >= (slot === 'lunch' ? settings.lunchCutoff : settings.dinnerCutoff);
 }
 
-/** এন্ট্রি না থাকলে কী দেখানো হবে */
+/** What to show when there is no entry yet */
 function currentMeal_(date, user, ex) {
   if (ex) return { lunch: ex.lunch, dinner: ex.dinner, isDefault: false };
   if (date > addDays_(today_(), 1)) {
@@ -601,7 +619,7 @@ function currentMeal_(date, user, ex) {
   return { lunch: 0, dinner: 0, isDefault: false };
 }
 
-/** changes = [{date, userId, lunch, dinner}] — নতুন হলে যোগ, পুরনো হলে আপডেট */
+/** changes = [{date, userId, lunch, dinner}] — inserts new rows, updates existing ones */
 function upsertMeals_(changes, by) {
   const map = mealsIndex_();
   const now = nowStr_();
@@ -626,8 +644,8 @@ function upsertMeals_(changes, by) {
 }
 
 /**
- * ডিফল্ট মিল বসানো। overwriteAuto = true হলে আগে আপনাআপনি বসানো (কেউ বদলায়নি এমন)
- * এন্ট্রিও নতুন ডিফল্ট অনুযায়ী বদলাবে।
+ * Fills in default meals. With overwriteAuto = true, entries that were filled
+ * automatically (and not changed by anyone since) follow the new defaults too.
  */
 function fillAutoMeals_(dates, onlyUserId, overwriteAuto) {
   const users = readAll_('Users').filter(function (u) {
@@ -647,7 +665,7 @@ function fillAutoMeals_(dates, onlyUserId, overwriteAuto) {
   upsertMeals_(changes, 'auto');
 }
 
-/** টাইম ট্রিগার (setup() তৈরি করে) — প্রতিদিন রাত ~১২:৩০ */
+/** Time-driven trigger (created automatically) — every night ~12:30 AM */
 function autoMealJob() {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -659,14 +677,14 @@ function autoMealJob() {
   }
 }
 
-/* ---------- সদস্য: নিজের মিল ---------- */
+/* ---------- Member: own meals ---------- */
 
 function mealsMy_(d, me) {
   const today = today_();
   const from = isYMD_(d.from) ? d.from : today;
   const to = isYMD_(d.to) ? d.to : addDays_(from, 6);
   const n = daysBetween_(from, to);
-  if (n < 0 || n > 62) throw new Error('তারিখের সীমা সঠিক নয়');
+  if (n < 0 || n > 62) throw new Error('Date range is not valid');
 
   const s = getSettings_();
   const map = mealsIndex_();
@@ -686,7 +704,7 @@ function mealsMy_(d, me) {
   };
 }
 
-/** এক দিনের মিল: { date, lunch, dinner } — যেটা পাঠানো হয়নি সেটা অপরিবর্তিত */
+/** One day: { date, lunch, dinner } — anything not sent stays unchanged */
 function mealsSetMy_(d, me) {
   const date = requireDate_(d.date);
   const s = getSettings_();
@@ -699,7 +717,7 @@ function mealsSetMy_(d, me) {
     const v = clampMeal_(d[slot], max);
     if (v === cur[slot]) return;
     if (slotLocked_(date, slot, s)) {
-      throw new Error((slot === 'lunch' ? 'দুপুরের' : 'রাতের') + ' মিল পরিবর্তনের সময় শেষ। ম্যানেজারকে বলুন।');
+      throw new Error((slot === 'lunch' ? 'Lunch' : 'Dinner') + ' can no longer be changed for this day. Please ask the manager.');
     }
     next[slot] = v;
   });
@@ -711,12 +729,12 @@ function mealsSetMy_(d, me) {
   };
 }
 
-/** একাধিক দিনে একসাথে (যেমন বাড়ি যাচ্ছি — ৫ দিন মিল বন্ধ)। বন্ধ হয়ে যাওয়া বেলা বাদ যায়। */
+/** Many days at once (e.g. going home — meals off for 5 days). Closed slots are skipped. */
 function mealsSetMyRange_(d, me) {
-  const from = requireDate_(d.from, 'শুরুর তারিখ');
-  const to = requireDate_(d.to, 'শেষের তারিখ');
+  const from = requireDate_(d.from, 'Start date');
+  const to = requireDate_(d.to, 'End date');
   const n = daysBetween_(from, to);
-  if (n < 0 || n > 62) throw new Error('সর্বোচ্চ ৬২ দিনের জন্য একসাথে দেওয়া যাবে');
+  if (n < 0 || n > 62) throw new Error('You can set at most 62 days at once');
 
   const s = getSettings_();
   const max = Number(s.maxGuestMeal) || 5;
@@ -743,7 +761,7 @@ function mealsSetMyRange_(d, me) {
   return { changed: changes.length, skipped: skipped };
 }
 
-/* ---------- ম্যানেজার: দিনভিত্তিক সবার মিল ---------- */
+/* ---------- Manager: everyone's meals for a day ---------- */
 
 function mealsDay_(d) {
   const date = isYMD_(d.date) ? d.date : today_();
@@ -780,12 +798,13 @@ function mealsSaveDay_(d, me) {
 /* ======================= Finance.gs ======================= */
 
 /**
- * খরচ (বাজার / সাধারণ), জমা (ডিপোজিট) এবং বাজারের মেমো।
+ * Expenses (bazar / shared), deposits and bazar memos (receipts).
  *
- * খরচের ধরন:
- *   bazar  — মিলের বাজার; মিল রেট = মোট বাজার ÷ মোট মিল
- *   shared — সাধারণ খরচ (গ্যাস, খালা, বিদ্যুৎ ইত্যাদি); সবার মধ্যে সমান ভাগ
- * paidBy: ফাঁকা = মেসের ফান্ড থেকে; সদস্যের id = সদস্য নিজের টাকায় করেছে (তার জমায় যোগ হবে)
+ * Expense types:
+ *   bazar  — groceries for meals; meal rate = total bazar ÷ total meals
+ *   shared — common costs (gas, maid, electricity...), split equally between members
+ * paidBy: empty = paid from the mess fund; a member id = paid from that member's
+ *         own pocket (counted as their deposit)
  */
 
 const EXPENSE_TYPES = ['bazar', 'shared'];
@@ -804,24 +823,24 @@ function strip_(r) {
   return o;
 }
 
-/* ---------- ছবি (Google Drive) ---------- */
+/* ---------- Photos (Google Drive) ---------- */
 
 function memoFolder_() {
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty('FOLDER_ID');
   if (id) {
-    try { return DriveApp.getFolderById(id); } catch (e) { /* ফোল্ডার মুছে গেছে, নতুন বানাই */ }
+    try { return DriveApp.getFolderById(id); } catch (e) { /* folder was deleted, make a new one */ }
   }
   const folder = DriveApp.createFolder('Mess Memo Images');
   props.setProperty('FOLDER_ID', folder.getId());
   return folder;
 }
 
-/** img = { data: base64, mime } — ফাইল আইডি ফেরত দেয় */
+/** img = { data: base64, mime } — returns the Drive file id */
 function saveImage_(img, prefix) {
   if (!img || !img.data) return '';
   const bytes = Utilities.base64Decode(String(img.data));
-  if (bytes.length > 5 * 1024 * 1024) throw new Error('ছবি খুব বড় (সর্বোচ্চ ৫ MB)');
+  if (bytes.length > 5 * 1024 * 1024) throw new Error('Photo is too large (max 5 MB)');
   const mime = /^image\/(jpeg|png|webp)$/.test(img.mime) ? img.mime : 'image/jpeg';
   const ext = mime.split('/')[1].replace('jpeg', 'jpg');
   const file = memoFolder_().createFile(Utilities.newBlob(bytes, mime, prefix + '_' + nowStr_().replace(/[: ]/g, '-') + '.' + ext));
@@ -830,21 +849,21 @@ function saveImage_(img, prefix) {
 
 function trashFile_(fileId) {
   if (!fileId) return;
-  try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) { /* আগেই মুছে গেছে */ }
+  try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) { /* already gone */ }
 }
 
 /**
- * অ্যাপের ভেতরে ছবি দেখানো — শুধু শিটে থাকা মেমো/খরচের ছবি, অন্য কোনো Drive ফাইল নয়।
- * { kind: 'memo' | 'expense', id }
+ * Shows a photo inside the app — only photos of memos/expenses in the sheet,
+ * never any other Drive file. { kind: 'memo' | 'expense', id }
  */
 function imageGet_(d) {
   const row = findById_(d.kind === 'expense' ? 'Expenses' : 'Memos', d.id);
-  if (!row || !row.fileId) throw new Error('ছবি পাওয়া যায়নি');
+  if (!row || !row.fileId) throw new Error('Photo not found');
   const blob = DriveApp.getFileById(row.fileId).getBlob();
   return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
 }
 
-/* ---------- খরচ ---------- */
+/* ---------- Expenses ---------- */
 
 function expensesList_(d) {
   const month = requireMonth_(d.month);
@@ -870,7 +889,7 @@ function expensesSave_(d, me) {
 
   if (d.id) {
     const e = findById_('Expenses', d.id);
-    if (!e) throw new Error('খরচ পাওয়া যায়নি');
+    if (!e) throw new Error('Expense not found');
     if (fileId) { trashFile_(e.fileId); e.fileId = fileId; }
     e.date = date; e.type = type; e.amount = amount; e.description = description; e.paidBy = paidBy;
     updateRow_('Expenses', e._row, e);
@@ -885,9 +904,9 @@ function expensesSave_(d, me) {
 
 function expensesDelete_(d) {
   const e = findById_('Expenses', d.id);
-  if (!e) throw new Error('খরচ পাওয়া যায়নি');
+  if (!e) throw new Error('Expense not found');
   if (e.memoId) {
-    // মেমো থেকে আসা খরচ মুছলে মেমোটা আবার "অপেক্ষমাণ" হয়ে যায়, ছবি মেমোতেই থাকে
+    // Deleting an expense that came from a memo puts the memo back to "pending"; the photo stays with the memo
     const m = findById_('Memos', e.memoId);
     if (m) { m.status = 'pending'; m.expenseId = ''; m.reviewedBy = ''; updateRow_('Memos', m._row, m); }
   } else {
@@ -898,7 +917,7 @@ function expensesDelete_(d) {
   return expensesList_({ month: month });
 }
 
-/* ---------- জমা ---------- */
+/* ---------- Deposits ---------- */
 
 function depositsList_(d, me) {
   const month = requireMonth_(d.month);
@@ -914,16 +933,16 @@ function depositsList_(d, me) {
     });
 }
 
-/** { id?, date, userId, amount, note } — ঋণাত্মক টাকা = সমন্বয় / ফেরত */
+/** { id?, date, userId, amount, note } — a negative amount = refund / adjustment */
 function depositsSave_(d, me) {
   const date = requireDate_(d.date);
-  if (!findById_('Users', d.userId)) throw new Error('সদস্য বেছে নিন');
+  if (!findById_('Users', d.userId)) throw new Error('Choose a member');
   const amount = requireAmount_(d.amount);
   const note = clean_(d.note, 200);
 
   if (d.id) {
     const r = findById_('Deposits', d.id);
-    if (!r) throw new Error('জমা পাওয়া যায়নি');
+    if (!r) throw new Error('Deposit not found');
     r.date = date; r.userId = d.userId; r.amount = amount; r.note = note;
     updateRow_('Deposits', r._row, r);
   } else {
@@ -936,12 +955,12 @@ function depositsSave_(d, me) {
 
 function depositsDelete_(d, me) {
   const r = findById_('Deposits', d.id);
-  if (!r) throw new Error('জমা পাওয়া যায়নি');
+  if (!r) throw new Error('Deposit not found');
   deleteRow_('Deposits', r._row);
   return depositsList_({ month: r.date.slice(0, 7) }, me);
 }
 
-/* ---------- বাজারের মেমো ---------- */
+/* ---------- Bazar memos ---------- */
 
 function memosList_(d, me) {
   const month = requireMonth_(d.month);
@@ -960,12 +979,12 @@ function memosList_(d, me) {
     });
 }
 
-/** সদস্য বাজার করে মেমোর ছবি দেয়: { date, amount, note, image } */
+/** A member does the bazar and uploads the memo photo: { date, amount, note, image } */
 function memosUpload_(d, me) {
   const date = requireDate_(d.date);
   const amount = requireAmount_(d.amount);
-  if (amount < 0) throw new Error('সঠিক টাকার পরিমাণ দিন');
-  if (!d.image || !d.image.data) throw new Error('মেমোর ছবি দিন');
+  if (amount < 0) throw new Error('Enter a valid amount');
+  if (!d.image || !d.image.data) throw new Error('Add a photo of the memo');
   const fileId = saveImage_(d.image, 'memo_' + me.username);
 
   insertRows_('Memos', [{
@@ -973,7 +992,7 @@ function memosUpload_(d, me) {
     fileId: fileId, status: 'pending', expenseId: '', reviewedBy: '', createdAt: nowStr_()
   }]);
 
-  // ওই দিনে এই সদস্যের বাজার ডিউটি থাকলে সেটা "সম্পন্ন" করে দিই
+  // If this member had a bazar duty that day, mark it done
   readAll_('Duties').forEach(function (t) {
     if (t.type === 'bazar' && t.date === date && t.userId === me.id && t.status !== 'done') {
       t.status = 'done'; t.updatedBy = me.id;
@@ -984,21 +1003,21 @@ function memosUpload_(d, me) {
 }
 
 /**
- * ম্যানেজার মেমো যাচাই করে:
+ * Manager reviews a memo:
  * { id, action: 'approve'|'reject', amount?, description?, paidByMember: bool, type? }
- * অনুমোদন করলে খরচের তালিকায় যোগ হয়।
+ * Approving adds it to the expenses.
  */
 function memosReview_(d, me) {
   const m = findById_('Memos', d.id);
-  if (!m) throw new Error('মেমো পাওয়া যায়নি');
-  if (m.status !== 'pending') throw new Error('এই মেমো আগেই যাচাই করা হয়েছে');
+  if (!m) throw new Error('Memo not found');
+  if (m.status !== 'pending') throw new Error('This memo was already reviewed');
 
   if (d.action === 'approve') {
     const amount = d.amount ? requireAmount_(d.amount) : m.amount;
     const expenseId = uid_();
     insertRows_('Expenses', [{
       id: expenseId, date: m.date, type: EXPENSE_TYPES.indexOf(d.type) > -1 ? d.type : 'bazar',
-      amount: amount, description: clean_(d.description || m.note || 'বাজার (মেমো)', 300),
+      amount: amount, description: clean_(d.description || m.note || 'Bazar (memo)', 300),
       paidBy: d.paidByMember ? m.userId : '', fileId: m.fileId, memoId: m.id,
       addedBy: me.id, createdAt: nowStr_()
     }]);
@@ -1013,13 +1032,13 @@ function memosReview_(d, me) {
   return memosList_({ month: m.date.slice(0, 7) }, me);
 }
 
-/** সদস্য নিজের অপেক্ষমাণ মেমো মুছতে পারে; ম্যানেজার অনুমোদিত নয় এমন যেকোনো মেমো */
+/** Members can delete their own pending memos; managers any memo that is not approved */
 function memosDelete_(d, me) {
   const m = findById_('Memos', d.id);
-  if (!m) throw new Error('মেমো পাওয়া যায়নি');
+  if (!m) throw new Error('Memo not found');
   const isMgr = me.role !== 'member';
-  if (!isMgr && (m.userId !== me.id || m.status !== 'pending')) throw new Error('শুধু নিজের অপেক্ষমাণ মেমো মুছতে পারবেন');
-  if (m.status === 'approved') throw new Error('অনুমোদিত মেমো মুছতে আগে খরচ থেকে এন্ট্রিটি মুছুন');
+  if (!isMgr && (m.userId !== me.id || m.status !== 'pending')) throw new Error('You can only delete your own pending memos');
+  if (m.status === 'approved') throw new Error('To delete an approved memo, delete its expense first');
   trashFile_(m.fileId);
   deleteRow_('Memos', m._row);
   return memosList_({ month: m.date.slice(0, 7) }, me);
@@ -1029,7 +1048,7 @@ function memosDelete_(d, me) {
 /* ======================= Duties.gs ======================= */
 
 /**
- * ডিউটি রোস্টার: বাজারের তারিখ ও ওয়াশরুম পরিষ্কারের তারিখ।
+ * Duty roster: bazar days and washroom cleaning days.
  * type: 'bazar' | 'clean', status: 'pending' | 'done' | 'missed'
  */
 
@@ -1053,13 +1072,13 @@ function dutiesList_(d) {
 function dutiesSave_(d, me) {
   const date = requireDate_(d.date);
   const type = DUTY_TYPES.indexOf(d.type) > -1 ? d.type : 'bazar';
-  if (!findById_('Users', d.userId)) throw new Error('সদস্য বেছে নিন');
-  const area = clean_(d.area, 60) || (type === 'clean' ? 'ওয়াশরুম' : '');
+  if (!findById_('Users', d.userId)) throw new Error('Choose a member');
+  const area = clean_(d.area, 60) || (type === 'clean' ? 'Washroom' : '');
   const status = DUTY_STATUS.indexOf(d.status) > -1 ? d.status : 'pending';
 
   if (d.id) {
     const t = findById_('Duties', d.id);
-    if (!t) throw new Error('ডিউটি পাওয়া যায়নি');
+    if (!t) throw new Error('Duty not found');
     t.type = type; t.date = date; t.userId = d.userId; t.area = area;
     t.note = clean_(d.note, 200); t.status = status; t.updatedBy = me.id;
     updateRow_('Duties', t._row, t);
@@ -1074,28 +1093,28 @@ function dutiesSave_(d, me) {
 
 function dutiesDelete_(d) {
   const t = findById_('Duties', d.id);
-  if (!t) throw new Error('ডিউটি পাওয়া যায়নি');
+  if (!t) throw new Error('Duty not found');
   deleteRow_('Duties', t._row);
   return dutiesList_({ month: t.date.slice(0, 7) });
 }
 
 /**
- * পালাক্রমে রোস্টার তৈরি:
- * { type, from, to, every (কত দিন পরপর), userIds (ক্রম অনুযায়ী), area, replace }
- * replace = true হলে ওই সময়ের একই ধরনের অপেক্ষমাণ ডিউটি মুছে নতুন বানায়।
+ * Builds a rotating roster:
+ * { type, from, to, every (days apart), userIds (in turn order), area, replace }
+ * With replace = true, pending duties of the same type in that period are removed first.
  */
 function dutiesGenerate_(d, me) {
   const type = DUTY_TYPES.indexOf(d.type) > -1 ? d.type : 'bazar';
-  const from = requireDate_(d.from, 'শুরুর তারিখ');
-  const to = requireDate_(d.to, 'শেষের তারিখ');
+  const from = requireDate_(d.from, 'Start date');
+  const to = requireDate_(d.to, 'End date');
   const every = Math.max(1, Math.min(31, parseInt(d.every, 10) || 1));
   const span = daysBetween_(from, to);
-  if (span < 0 || span > 92) throw new Error('সর্বোচ্চ ৯২ দিনের রোস্টার একসাথে বানানো যাবে');
+  if (span < 0 || span > 92) throw new Error('A roster can cover at most 92 days at once');
 
   const valid = {};
   readAll_('Users').forEach(function (u) { if (u.active === '1') valid[u.id] = true; });
   const userIds = (d.userIds || []).filter(function (id) { return valid[id]; });
-  if (!userIds.length) throw new Error('অন্তত একজন সদস্য বেছে নিন');
+  if (!userIds.length) throw new Error('Choose at least one member');
 
   if (d.replace) {
     const sh = sheet_('Duties');
@@ -1107,7 +1126,7 @@ function dutiesGenerate_(d, me) {
     delete _tableCache.Duties;
   }
 
-  const area = clean_(d.area, 60) || (type === 'clean' ? 'ওয়াশরুম' : '');
+  const area = clean_(d.area, 60) || (type === 'clean' ? 'Washroom' : '');
   const rows = [];
   for (let i = 0, k = 0; i <= span; i += every, k++) {
     rows.push({
@@ -1119,13 +1138,13 @@ function dutiesGenerate_(d, me) {
   return { created: rows.length };
 }
 
-/** সদস্য নিজের ডিউটি "সম্পন্ন" করতে পারে; ম্যানেজার যেকোনোটা */
+/** Members can mark their own duty done; managers any duty */
 function dutiesStatus_(d, me) {
   const t = findById_('Duties', d.id);
-  if (!t) throw new Error('ডিউটি পাওয়া যায়নি');
+  if (!t) throw new Error('Duty not found');
   const status = DUTY_STATUS.indexOf(d.status) > -1 ? d.status : 'done';
   if (me.role === 'member' && (t.userId !== me.id || status === 'missed')) {
-    throw new Error('শুধু নিজের ডিউটি সম্পন্ন করতে পারবেন');
+    throw new Error('You can only mark your own duty as done');
   }
   t.status = status;
   t.updatedBy = me.id;
@@ -1137,13 +1156,13 @@ function dutiesStatus_(d, me) {
 /* ======================= Report.gs ======================= */
 
 /**
- * মাসিক হিসাব ও ড্যাশবোর্ড।
+ * Monthly accounts and the home dashboard.
  *
- *   মিল রেট        = মোট বাজার খরচ ÷ মোট মিল
- *   মিল খরচ        = নিজের মিল × মিল রেট
- *   সাধারণ খরচ ভাগ = মোট সাধারণ খরচ ÷ সদস্য সংখ্যা
- *   মোট জমা        = টাকা জমা + নিজের টাকায় করা বাজার
- *   ব্যালেন্স       = মোট জমা − (মিল খরচ + সাধারণ খরচ ভাগ)   (+ হলে ফেরত পাবে, − হলে দিতে হবে)
+ *   Meal rate    = total bazar cost ÷ total meals
+ *   Meal cost    = own meals × meal rate
+ *   Shared share = total shared cost ÷ number of members
+ *   Credit       = cash deposits + bazar paid from own pocket
+ *   Balance      = credit − (meal cost + shared share)   (+ gets money back, − must pay)
  */
 
 function computeReport_(month, withMatrix) {
@@ -1158,7 +1177,7 @@ function computeReport_(month, withMatrix) {
   };
   users.forEach(function (u) { if (u.active === '1') ensure(u.id); });
 
-  // দিনভিত্তিক মোট মিল
+  // Meal totals per day
   const daysInMonth = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
   const dayMap = {};
   for (let i = 1; i <= daysInMonth; i++) {
@@ -1236,7 +1255,6 @@ function dashboard_(d, me) {
     { meals: 0, lunch: 0, dinner: 0, mealCost: 0, sharedCost: 0, totalCost: 0, credit: 0, balance: 0 };
 
   const todayMeals = mealsDay_({ date: today });
-  const myToday = todayMeals.rows.filter(function (r) { return r.userId === me.id; })[0] || { lunch: 0, dinner: 0 };
   const tomorrow = mealsDay_({ date: addDays_(today, 1) });
 
   const names = nameMap_();
@@ -1263,9 +1281,10 @@ function dashboard_(d, me) {
       totalShared: report.totalShared, totalDeposit: report.totalDeposit, cashInHand: report.cashInHand
     },
     mine: mine,
+    // Today and tomorrow, for the one-tap meal switches on the home page
+    myMeals: mealsMy_({ from: today, to: addDays_(today, 1) }, me),
     todayMeals: { lunch: todayMeals.totalLunch, dinner: todayMeals.totalDinner },
     tomorrowMeals: { lunch: tomorrow.totalLunch, dinner: tomorrow.totalDinner },
-    myToday: { lunch: myToday.lunch, dinner: myToday.dinner },
     duties: duties,
     pendingMemos: pendingMemos
   };
@@ -1275,14 +1294,14 @@ function dashboard_(d, me) {
 /* ======================= UI (Index + Styles + JS) ======================= */
 
 const APP_HTML = `<!DOCTYPE html>
-<html lang="bn">
+<html lang="en">
 <head>
   <base target="_top">
   <meta charset="utf-8">
   <meta name="theme-color" content="#0f766e">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Hind+Siliguri:wght@400;600&display=swap" rel="stylesheet">
   <style>
 :root {
   --bg: #f3f6f5;
@@ -1311,7 +1330,7 @@ const APP_HTML = `<!DOCTYPE html>
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  font-family: 'Hind Siliguri', system-ui, sans-serif;
+  font-family: 'Inter', 'Hind Siliguri', system-ui, sans-serif;
   background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5;
   -webkit-tap-highlight-color: transparent;
 }
@@ -1325,7 +1344,7 @@ body {
 h2 { font-size: 18px; margin: 4px 0 12px; }
 h3 { font-size: 16px; margin: 0 0 10px; }
 
-/* ---------- ফর্ম ---------- */
+/* ---------- Forms ---------- */
 label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 500; }
 input, select, textarea {
   font: inherit; color: var(--text); background: var(--card);
@@ -1343,6 +1362,7 @@ textarea { min-height: 70px; resize: vertical; }
 .btn {
   font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--text);
   border-radius: 10px; padding: 9px 14px; min-height: 42px; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none;
 }
 .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .btn.danger { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); }
@@ -1353,7 +1373,7 @@ textarea { min-height: 70px; resize: vertical; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .icon-btn { border: 0; background: transparent; color: inherit; font-size: 20px; width: 42px; height: 42px; border-radius: 10px; cursor: pointer; }
 
-/* ---------- লগইন ---------- */
+/* ---------- Login ---------- */
 .auth { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
 .auth-card { width: 100%; max-width: 380px; background: var(--card); border-radius: 20px; padding: 24px; box-shadow: var(--shadow); }
 .brand { text-align: center; margin-bottom: 16px; }
@@ -1362,7 +1382,7 @@ textarea { min-height: 70px; resize: vertical; }
 .brand p { margin: 0; }
 .note { background: var(--warn-soft); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
 
-/* ---------- লেআউট ---------- */
+/* ---------- Layout ---------- */
 .topbar {
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 6px;
   padding: 8px 10px; background: var(--card); border-bottom: 1px solid var(--line);
@@ -1408,7 +1428,7 @@ textarea { min-height: 70px; resize: vertical; }
   .view { margin-left: 270px; padding-bottom: 32px; }
 }
 
-/* ---------- কার্ড ---------- */
+/* ---------- Cards ---------- */
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-bottom: 14px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .card-head h3 { margin: 0; }
@@ -1423,7 +1443,7 @@ textarea { min-height: 70px; resize: vertical; }
 .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .toolbar input[type="month"], .toolbar input[type="date"] { width: auto; flex: 1; min-width: 150px; }
 
-/* ---------- তালিকা ও টেবিল ---------- */
+/* ---------- Lists and tables ---------- */
 .list { display: flex; flex-direction: column; }
 .item { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .item:last-child { border-bottom: 0; }
@@ -1442,7 +1462,7 @@ tfoot td { font-weight: 700; }
 .sheet th, .sheet td { padding: 4px 6px; text-align: center; font-size: 12px; }
 .sheet td:first-child, .sheet th:first-child { text-align: left; position: sticky; left: 0; background: var(--card); }
 
-/* ---------- মিল টগল ---------- */
+/* ---------- Meal steppers ---------- */
 .meal-day { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .meal-day:last-child { border-bottom: 0; }
 .meal-day .d { flex: 1; min-width: 0; }
@@ -1457,11 +1477,11 @@ tfoot td { font-weight: 700; }
 .stepper.locked button { cursor: not-allowed; }
 .slot { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); }
 
-/* ---------- ডিউটি ---------- */
+/* ---------- Duties ---------- */
 .duty-ico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-size: 20px; background: var(--primary-soft); flex-shrink: 0; }
 .duty-ico.clean { background: #e0f2fe; }
 
-/* ---------- মডাল, লোডার, টোস্ট ---------- */
+/* ---------- Modal, loader, toast ---------- */
 .modal { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
 @media (min-width: 640px) { .modal { align-items: center; } }
 .modal-card { background: var(--card); width: 100%; max-width: 520px; max-height: 92vh; border-radius: 18px 18px 0 0; display: flex; flex-direction: column; }
@@ -1489,41 +1509,52 @@ tfoot td { font-weight: 700; }
   .view { margin: 0; padding: 0; max-width: none; }
   .card, .stat { box-shadow: none; border: 1px solid #ddd; }
 }
+/* ---------- One-tap meal switches (home) ---------- */
+.quick { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; align-items: center; }
+.quick .day { font-weight: 600; font-size: 14px; padding-right: 4px; }
+.qbtn {
+  font: inherit; font-weight: 600; border-radius: 12px; min-height: 52px; padding: 6px 10px; cursor: pointer;
+  border: 2px solid var(--line); background: var(--card); color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2;
+}
+.qbtn small { font-weight: 500; font-size: 12px; }
+.qbtn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--text); }
+.qbtn.locked { opacity: .5; cursor: not-allowed; }
 </style>
 
 </head>
 <body>
-  <!-- লগইন / প্রথম অ্যাডমিন তৈরি -->
+  <!-- Login / first admin -->
   <section id="auth" class="auth hidden">
     <div class="auth-card">
       <div class="brand">
         <div class="brand-icon">🍛</div>
         <h1 id="authTitle">{{MESS_NAME}}</h1>
-        <p class="muted" id="authSub">মেস মিল হিসাব</p>
+        <p class="muted" id="authSub">Mess Meal Manager</p>
       </div>
 
       <form id="loginForm" class="stack hidden" autocomplete="on">
-        <label>ইউজারনেম<input name="username" required autocomplete="username" autocapitalize="none"></label>
-        <label>পাসওয়ার্ড<input name="password" type="password" required autocomplete="current-password"></label>
-        <button class="btn primary block" type="submit">লগইন</button>
-        <p class="muted small center">পাসওয়ার্ড ভুলে গেলে অ্যাডমিনকে রিসেট করতে বলুন</p>
+        <label>Username<input name="username" required autocomplete="username" autocapitalize="none"></label>
+        <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
+        <button class="btn primary block" type="submit">Log in</button>
+        <p class="muted small center">Forgot your password? Ask the admin to reset it.</p>
       </form>
 
       <form id="setupForm" class="stack hidden">
-        <div class="note">প্রথমবার চালু হচ্ছে — অ্যাডমিন অ্যাকাউন্ট তৈরি করুন</div>
-        <label>মেসের নাম<input name="messName" required placeholder="যেমন: বাসা নং ১২ মেস"></label>
-        <label>আপনার নাম<input name="name" required></label>
-        <label>ইউজারনেম<input name="username" required autocapitalize="none" placeholder="ইংরেজিতে, যেমন: tarun"></label>
-        <label>পাসওয়ার্ড<input name="password" type="password" required minlength="6"></label>
-        <button class="btn primary block" type="submit">অ্যাডমিন তৈরি করুন</button>
+        <div class="note">First time here — create the admin account</div>
+        <label>Mess name<input name="messName" required placeholder="e.g. House 12 Mess"></label>
+        <label>Your name<input name="name" required></label>
+        <label>Username<input name="username" required autocapitalize="none" placeholder="e.g. admin"></label>
+        <label>Password<input name="password" type="password" required minlength="4"></label>
+        <button class="btn primary block" type="submit">Create admin</button>
       </form>
     </div>
   </section>
 
-  <!-- মূল অ্যাপ -->
+  <!-- Main app -->
   <div id="app" class="hidden">
     <header class="topbar">
-      <button class="icon-btn" data-act="menu" aria-label="মেনু">☰</button>
+      <button class="icon-btn" data-act="menu" aria-label="Menu">☰</button>
       <div class="topbar-title">
         <strong id="messName">{{MESS_NAME}}</strong>
         <span id="pageTitle" class="muted small"></span>
@@ -1536,11 +1567,11 @@ tfoot td { font-weight: 700; }
 
     <aside id="drawer" class="drawer">
       <div class="drawer-head">
-        <strong>মেনু</strong>
-        <button class="icon-btn" data-act="menu-close" aria-label="বন্ধ">✕</button>
+        <strong>Menu</strong>
+        <button class="icon-btn" data-act="menu-close" aria-label="Close">✕</button>
       </div>
       <nav id="drawerNav"></nav>
-      <button class="btn ghost block" data-act="logout">🚪 লগআউট</button>
+      <button class="btn ghost block" data-act="logout">🚪 Log out</button>
     </aside>
     <div id="scrim" class="scrim" data-act="menu-close"></div>
 
@@ -1549,12 +1580,12 @@ tfoot td { font-weight: 700; }
     <nav id="bottomNav" class="bottom-nav"></nav>
   </div>
 
-  <!-- ডায়ালগ -->
+  <!-- Dialog -->
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-card">
       <div class="modal-head">
         <strong id="modalTitle"></strong>
-        <button class="icon-btn" data-act="modal-close" aria-label="বন্ধ">✕</button>
+        <button class="icon-btn" data-act="modal-close" aria-label="Close">✕</button>
       </div>
       <div id="modalBody" class="modal-body"></div>
     </div>
@@ -1564,38 +1595,39 @@ tfoot td { font-weight: 700; }
   <div id="toasts" class="toasts"></div>
 
   <script>
-/* ================= অবস্থা ও সহায়ক ================= */
-const ROLE_LABEL = { admin: 'অ্যাডমিন', manager: 'ম্যানেজার', member: 'সদস্য' };
+/* ================= State and helpers ================= */
+const ROLE_LABEL = { admin: 'Admin', manager: 'Manager', member: 'Member' };
 const ALL = ['admin', 'manager', 'member'], MGR = ['admin', 'manager'], ADM = ['admin'];
 
-const S = { token: null, user: null, settings: {}, page: 'home', params: {}, users: null, month: null, date: null };
-const PAGES = {};   // JsPages / JsManage এ পেজগুলো যোগ হয়
-const ACT = {};     // data-act="..." ক্লিক হ্যান্ডলার
-const CHG = {};     // data-chg="..." change হ্যান্ডলার
+const S = { token: null, user: null, settings: {}, appUrl: '', page: 'home', params: {}, users: null, month: null, date: null };
+const PAGES = {};   // pages are added in JsPages / JsManage
+const ACT = {};     // click handlers for data-act="..."
+const CHG = {};     // change handlers for data-chg="..."
 
 const $ = (sel, root) => (root || document).querySelector(sel);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* প্রাইভেট মোড */ } }
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
 };
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const bn = n => Number(n || 0).toLocaleString('bn-BD', { maximumFractionDigits: 2 });
-const tk = n => '৳' + bn(n);
+const num = n => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const tk = n => '৳' + num(n);
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const todayStr = () => ymd(new Date());
 const thisMonth = () => todayStr().slice(0, 7);
 const addDays = (s, n) => { const p = s.split('-').map(Number); return ymd(new Date(p[0], p[1] - 1, p[2] + n)); };
 const shiftMonth = (m, n) => { const p = m.split('-').map(Number); const d = new Date(p[0], p[1] - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
-const fmtDate = (s, opt) => s ? new Date(s + 'T00:00:00').toLocaleDateString('bn-BD', opt || { day: 'numeric', month: 'short', weekday: 'short' }) : '';
-const fmtMonth = m => new Date(m + '-01T00:00:00').toLocaleDateString('bn-BD', { month: 'long', year: 'numeric' });
+const fmtDate = (s, opt) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB', opt || { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+const fmtMonth = m => new Date(m + '-01T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 const isMgr = () => !!S.user && S.user.role !== 'member';
 const isAdmin = () => !!S.user && S.user.role === 'admin';
 const signed = n => (n >= 0 ? '+' : '−') + tk(Math.abs(n));
 const balClass = n => n >= 0 ? 'pos' : 'neg';
+const plural = (n, word) => num(n) + ' ' + word + (Number(n) === 1 ? '' : 's');
 
 /* ================= API ================= */
 let loadCount = 0;
@@ -1604,30 +1636,43 @@ function loading(on) {
   $('#loader').classList.toggle('hidden', loadCount === 0);
 }
 
+/**
+ * Sends a request to the server. Inside Apps Script it uses google.script.run;
+ * on a separate website (e.g. Vercel) it uses fetch to window.MESS_API_URL (doPost).
+ */
+function transport(action, data) {
+  if (window.google && google.script && google.script.run) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(action, S.token, data);
+    });
+  }
+  if (!window.MESS_API_URL || window.MESS_API_URL.indexOf('/exec') === -1) {
+    return Promise.reject(new Error('API URL is not set — put your Apps Script Web App URL in config.js'));
+  }
+  // A text/plain body is a "simple request", so no CORS preflight is needed
+  return fetch(window.MESS_API_URL, { method: 'POST', body: JSON.stringify({ action: action, token: S.token, data: data }) })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+}
+
 function call(action, data, opts) {
   opts = opts || {};
   if (!opts.silent) loading(true);
-  return new Promise((resolve, reject) => {
-    google.script.run
-      .withSuccessHandler(res => {
-        if (!opts.silent) loading(false);
-        if (res && res.ok) return resolve(res.data);
-        const msg = (res && res.error) || 'কিছু একটা সমস্যা হয়েছে';
-        if (msg.indexOf('AUTH:') === 0) {
-          const wasIn = !!S.user;
-          clearSession();
-          if (wasIn) { toast(msg.slice(5).trim(), 'err'); showAuth(); }
-          return reject(new Error('auth'));
-        }
-        toast(msg, 'err');
-        reject(new Error(msg));
-      })
-      .withFailureHandler(err => {
-        if (!opts.silent) loading(false);
-        toast('সার্ভারে সংযোগ হয়নি। ইন্টারনেট দেখে আবার চেষ্টা করুন।', 'err');
-        reject(err);
-      })
-      .api(action, S.token, data || {});
+  return transport(action, data || {}).then(res => {
+    if (!opts.silent) loading(false);
+    if (res && res.ok) return res.data;
+    const msg = (res && res.error) || 'Something went wrong';
+    if (msg.indexOf('AUTH:') === 0) {
+      const wasIn = !!S.user;
+      clearSession();
+      if (wasIn) { toast(msg.slice(5).trim(), 'err'); showAuth(); }
+      throw new Error('auth');
+    }
+    toast(msg, 'err');
+    throw new Error(msg);
+  }, err => {
+    if (!opts.silent) loading(false);
+    toast(err && err.message && err.message.indexOf('config.js') > -1 ? err.message : 'Could not reach the server. Check your internet and try again.', 'err');
+    throw err;
   });
 }
 
@@ -1641,7 +1686,7 @@ function userOptions(users, selected, emptyLabel) {
       .map(u => \`<option value="\${esc(u.id)}" \${u.id === selected ? 'selected' : ''}>\${esc(u.name)}\${u.room ? ' (' + esc(u.room) + ')' : ''}</option>\`).join('');
 }
 
-/* ================= UI: টোস্ট, মডাল ================= */
+/* ================= UI: toast, modal ================= */
 function toast(msg, type) {
   const el = document.createElement('div');
   el.className = 'toast ' + (type || '');
@@ -1660,7 +1705,7 @@ function formData(form) {
   return o;
 }
 
-/** onSubmit(data, form) — true ফেরত দিলে ডায়ালগ খোলা থাকে */
+/** onSubmit(data, form) — return true to keep the dialog open */
 function openModal(title, html, onSubmit) {
   $('#modalTitle').textContent = title;
   $('#modalBody').innerHTML = html;
@@ -1674,7 +1719,7 @@ function openModal(title, html, onSubmit) {
       try {
         const keep = await onSubmit(formData(form), form);
         if (keep !== true) closeModal();
-      } catch (err) { /* টোস্টে দেখানো হয়েছে */ }
+      } catch (err) { /* already shown as a toast */ }
       if (btn) btn.disabled = false;
     };
     const first = $('input:not([type="hidden"]), select, textarea', form);
@@ -1685,23 +1730,52 @@ function closeModal() { $('#modal').classList.add('hidden'); $('#modalBody').inn
 
 function confirmBox(msg, okText) {
   return new Promise(resolve => {
-    openModal('নিশ্চিত করুন', \`<form class="stack"><p>\${esc(msg)}</p>
-      <div class="row"><button type="button" class="btn" data-act="modal-close">না</button>
-      <button type="submit" class="btn danger">\${esc(okText || 'হ্যাঁ')}</button></div></form>\`, () => { resolve(true); });
+    openModal('Please confirm', \`<form class="stack"><p>\${esc(msg)}</p>
+      <div class="row"><button type="button" class="btn" data-act="modal-close">No</button>
+      <button type="submit" class="btn danger">\${esc(okText || 'Yes')}</button></div></form>\`, () => { resolve(true); });
     const obs = new MutationObserver(() => { if ($('#modal').classList.contains('hidden')) { obs.disconnect(); resolve(false); } });
     obs.observe($('#modal'), { attributes: true });
   });
 }
 
-/* ================= ছবি ================= */
+/* ================= Share login details ================= */
+function appLink() {
+  return window.MESS_API_URL ? location.origin + location.pathname : (S.appUrl || '');
+}
+
+/** After adding a member or resetting a password: copy or send the details on WhatsApp */
+function shareLogin(name, username, password) {
+  const link = appLink();
+  const msg = \`Hi \${name}, here is your login for \${S.settings.messName || 'our mess'}:\\n\` +
+    (link ? \`Link: \${link}\\n\` : '') + \`Username: \${username}\\nPassword: \${password}\\n\` +
+    \`You can change your password from Profile after logging in.\`;
+  openModal('Share login details', \`<div class="stack">
+      <p class="small muted" style="margin:0">Send this to \${esc(name)} so they can log in.</p>
+      <textarea id="shareText" rows="6" readonly>\${esc(msg)}</textarea>
+      <div class="row">
+        <button class="btn" data-act="copy-share">📋 Copy</button>
+        <a class="btn ok" href="https://wa.me/?text=\${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
+      </div></div>\`);
+}
+
+ACT['copy-share'] = () => {
+  const t = $('#shareText');
+  t.select();
+  const done = () => toast('Copied', 'ok');
+  const fallback = () => { try { document.execCommand('copy'); done(); } catch (e) { toast('Select the text and copy it manually', 'err'); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(done, fallback);
+  else fallback();
+};
+
+/* ================= Photos ================= */
 function compressImage(file, max, quality) {
   max = max || 1400; quality = quality || 0.75;
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('ছবি পড়া যায়নি'));
+    reader.onerror = () => reject(new Error('Could not read the photo'));
     reader.onload = () => {
       const img = new Image();
-      img.onerror = () => reject(new Error('এই ছবিটি খোলা যাচ্ছে না, অন্য ছবি দিন'));
+      img.onerror = () => reject(new Error('This photo cannot be opened, please choose another one'));
       img.onload = () => {
         const scale = Math.min(1, max / Math.max(img.width, img.height));
         const c = document.createElement('canvas');
@@ -1720,7 +1794,7 @@ function compressImage(file, max, quality) {
   });
 }
 
-/** ফর্মের ছবি ফিল্ড থেকে কমপ্রেস করা ছবি (না থাকলে null) */
+/** The compressed photo from a form's file field (or null) */
 async function imageFromForm(form) {
   const input = $('input[type="file"]', form);
   if (!input || !input.files || !input.files[0]) return null;
@@ -1740,10 +1814,10 @@ CHG.preview = async el => {
 
 ACT['show-image'] = async el => {
   const src = await call('image.get', { kind: el.dataset.kind, id: el.dataset.id });
-  openModal('মেমোর ছবি', \`<img class="memo" src="\${src}" alt="মেমো">\`);
+  openModal('Memo photo', \`<img class="memo" src="\${src}" alt="Memo">\`);
 };
 
-/* ================= নেভিগেশন ================= */
+/* ================= Navigation ================= */
 const NAV_ORDER = ['home', 'mymeal', 'daymeal', 'memo', 'expense', 'deposit', 'duty', 'report', 'users', 'settings', 'profile'];
 
 function allowed(page) { return PAGES[page] && PAGES[page].roles.indexOf(S.user.role) > -1; }
@@ -1756,8 +1830,8 @@ function renderNav() {
   const bottom = (isMgr() ? ['home', 'daymeal', 'memo', 'report'] : ['home', 'mymeal', 'memo', 'duty']).filter(allowed);
   $('#bottomNav').innerHTML = bottom.map(p =>
     \`<a data-act="go" data-page="\${p}" class="\${S.page === p ? 'active' : ''}"><span class="ico">\${PAGES[p].icon}</span>\${PAGES[p].short || PAGES[p].title}
-     \${p === 'memo' && S.pendingMemos ? \`<span class="dot">\${bn(S.pendingMemos)}</span>\` : ''}</a>\`).join('') +
-    \`<a data-act="menu"><span class="ico">☰</span>আরো</a>\`;
+     \${p === 'memo' && S.pendingMemos ? \`<span class="dot">\${num(S.pendingMemos)}</span>\` : ''}</a>\`).join('') +
+    \`<a data-act="menu"><span class="ico">☰</span>More</a>\`;
 }
 
 async function go(page, params) {
@@ -1769,17 +1843,17 @@ async function go(page, params) {
   renderNav();
   closeDrawer();
   const view = $('#view');
-  view.innerHTML = '<div class="empty">লোড হচ্ছে…</div>';
+  view.innerHTML = '<div class="empty">Loading…</div>';
   window.scrollTo(0, 0);
   try { await PAGES[page].render(view, S.params); }
-  catch (e) { if (S.page === page && e.message !== 'auth') view.innerHTML = \`<div class="empty">\${esc(e.message || 'লোড করা যায়নি')}<br><br><button class="btn" data-act="reload">আবার চেষ্টা</button></div>\`; }
+  catch (e) { if (S.page === page && e.message !== 'auth') view.innerHTML = \`<div class="empty">\${esc(e.message || 'Could not load')}<br><br><button class="btn" data-act="reload">Try again</button></div>\`; }
 }
 const refresh = () => go(S.page, S.params);
 
 function openDrawer() { $('#drawer').classList.add('open'); $('#scrim').classList.add('open'); }
 function closeDrawer() { $('#drawer').classList.remove('open'); $('#scrim').classList.remove('open'); }
 
-/** মাস বদলানোর বার (‹ অক্টোবর ২০২৬ ›) */
+/** Month switcher (‹ October 2026 ›) */
 function monthNav() {
   S.month = S.month || thisMonth();
   return \`<div class="switcher"><button class="btn sm" data-act="month-shift" data-n="-1">‹</button>
@@ -1799,7 +1873,7 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (!el || !ACT[el.dataset.act]) return;
   e.preventDefault();
-  Promise.resolve().then(() => ACT[el.dataset.act](el, e)).catch(() => { /* টোস্টে দেখানো হয়েছে */ });
+  Promise.resolve().then(() => ACT[el.dataset.act](el, e)).catch(() => { /* already shown as a toast */ });
 });
 document.addEventListener('change', e => {
   const el = e.target.closest('[data-chg]');
@@ -1807,15 +1881,16 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeDrawer(); } });
 
-/* ================= লগইন ================= */
+/* ================= Login ================= */
 function clearSession() { store.set('token', null); S.token = null; S.user = null; S.users = null; }
 
 function startApp(res) {
   if (res.token) { S.token = res.token; store.set('token', res.token); }
   S.user = res.user;
   S.settings = res.settings || {};
+  S.appUrl = res.appUrl || S.appUrl;
   S.month = thisMonth();
-  $('#messName').textContent = S.settings.messName || 'মেস মিল হিসাব';
+  $('#messName').textContent = document.title = S.settings.messName || 'Mess Meal Manager';
   $('#userName').textContent = S.user.name;
   $('#userRole').textContent = ROLE_LABEL[S.user.role];
   $('#auth').classList.add('hidden');
@@ -1829,17 +1904,20 @@ async function showAuth() {
   $('#loginForm').classList.add('hidden');
   $('#setupForm').classList.add('hidden');
   const st = await call('auth.status');
-  if (st.messName) $('#authTitle').textContent = st.messName;
+  if (st.messName) $('#authTitle').textContent = document.title = st.messName;
   $(st.needsSetup ? '#setupForm' : '#loginForm').classList.remove('hidden');
 }
 
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
-  try { startApp(await call('auth.login', formData(e.target))); e.target.reset(); } catch (err) { /* টোস্ট */ }
+  try { startApp(await call('auth.login', formData(e.target))); e.target.reset(); } catch (err) { /* toast */ }
 });
 $('#setupForm').addEventListener('submit', async e => {
   e.preventDefault();
-  try { startApp(await call('auth.setupAdmin', formData(e.target))); toast('স্বাগতম! এখন সদস্যদের যোগ করুন', 'ok'); } catch (err) { /* টোস্ট */ }
+  try {
+    startApp(await call('auth.setupAdmin', formData(e.target)));
+    toast('Welcome! Next, add your members from "Members & roles".', 'ok');
+  } catch (err) { /* toast */ }
 });
 
 window.addEventListener('load', async () => {
@@ -1853,24 +1931,25 @@ window.addEventListener('load', async () => {
 
   <script>
 /* =========================================================
-   সবার জন্য পেজ: হোম, আমার মিল, মেমো, ডিউটি, রিপোর্ট, প্রোফাইল
+   Pages for everyone: Home, My meals, Memos, Duties, Report, Profile
    ========================================================= */
 
-const DUTY_LABEL = { bazar: 'বাজার', clean: 'পরিষ্কার' };
+const DUTY_LABEL = { bazar: 'Bazar', clean: 'Cleaning' };
 const DUTY_ICON = { bazar: '🛒', clean: '🚿' };
-const DUTY_STATUS = { pending: ['বাকি', 'warn'], done: ['সম্পন্ন', 'ok'], missed: ['মিস', 'danger'] };
-const MEMO_STATUS = { pending: ['অপেক্ষমাণ', 'warn'], approved: ['অনুমোদিত', 'ok'], rejected: ['বাতিল', 'danger'] };
+const DUTY_STATUS = { pending: ['Pending', 'warn'], done: ['Done', 'ok'], missed: ['Missed', 'danger'] };
+const MEMO_STATUS = { pending: ['Pending', 'warn'], approved: ['Approved', 'ok'], rejected: ['Rejected', 'danger'] };
 const badge = (map, key) => \`<span class="badge \${(map[key] || [])[1] || 'gray'}">\${(map[key] || [key])[0]}</span>\`;
+const SLOT = { lunch: '☀️ Lunch', dinner: '🌙 Dinner' };
 
 function dutyItem(t) {
   const mine = S.user && t.userId === S.user.id;
   const actions = [];
-  if (t.status === 'pending' && (mine || isMgr())) actions.push(\`<button class="btn sm ok" data-act="duty-done" data-id="\${t.id}">✓ সম্পন্ন</button>\`);
+  if (t.status === 'pending' && (mine || isMgr())) actions.push(\`<button class="btn sm ok" data-act="duty-done" data-id="\${t.id}">✓ Done</button>\`);
   if (isMgr() && S.page === 'duty') actions.push(\`<button class="btn sm" data-act="duty-edit" data-id="\${t.id}">✎</button>\`);
   return \`<div class="item">
     <div class="duty-ico \${t.type}">\${DUTY_ICON[t.type]}</div>
     <div class="grow">
-      <div class="title">\${esc(t.name)}\${mine ? ' <span class="badge">আমি</span>' : ''}</div>
+      <div class="title">\${esc(t.name)}\${mine ? ' <span class="badge">Me</span>' : ''}</div>
       <div class="sub">\${fmtDate(t.date)} · \${DUTY_LABEL[t.type]}\${t.area ? ' (' + esc(t.area) + ')' : ''}\${t.note ? ' · ' + esc(t.note) : ''}</div>
     </div>
     \${badge(DUTY_STATUS, t.status)} \${actions.join(' ')}
@@ -1879,63 +1958,93 @@ function dutyItem(t) {
 
 ACT['duty-done'] = async el => {
   await call('duties.status', { id: el.dataset.id, status: 'done' });
-  toast('ডিউটি সম্পন্ন হিসেবে চিহ্নিত হয়েছে', 'ok');
+  toast('Duty marked as done', 'ok');
   refresh();
 };
 
-/* ---------------- হোম ---------------- */
+/* ---------------- Home ---------------- */
+function quickMeals() {
+  const st = S.quick;
+  return st.days.map((d, i) => \`
+    <div class="day">\${i === 0 ? 'Today' : 'Tomorrow'}<div class="small muted">\${fmtDate(d.date, { day: 'numeric', month: 'short' })}</div></div>
+    \${['lunch', 'dinner'].map(slot => {
+      const v = d[slot], locked = slot === 'lunch' ? d.lockLunch : d.lockDinner;
+      const label = v > 1 ? \`ON · \${v}\` : v ? 'ON' : 'OFF';
+      return \`<button class="qbtn \${v ? 'on' : ''} \${locked ? 'locked' : ''}" data-act="quick-meal" data-i="\${i}" data-slot="\${slot}" \${locked ? 'disabled' : ''}>
+        <span>\${SLOT[slot]}</span><small>\${locked ? '🔒 ' : ''}\${label}</small></button>\`;
+    }).join('')}\`).join('');
+}
+
 PAGES.home = {
-  title: 'হোম', icon: '🏠', roles: ALL,
+  title: 'Home', icon: '🏠', roles: ALL,
   async render(v) {
     const d = await call('dashboard');
     S.pendingMemos = d.pendingMemos;
+    S.quick = d.myMeals;
     renderNav();
     const m = d.mine;
     v.innerHTML = \`
+      <div class="card">
+        <div class="card-head"><h3>My meals</h3>
+          <button class="btn sm" data-act="go" data-page="mymeal">More days</button></div>
+        <div class="quick" id="quickBox">\${quickMeals()}</div>
+        <p class="small muted" style="margin:10px 0 0">Tap to switch on/off. Today's lunch closes at \${esc(S.quick.lunchCutoff)}, dinner at \${esc(S.quick.dinnerCutoff)}.</p>
+      </div>
+
       <div class="stats">
-        <div class="stat hl"><div class="lbl">এই মাসের মিল রেট</div><div class="val">\${tk(d.month.mealRate)}</div></div>
-        <div class="stat"><div class="lbl">আমার মিল (এই মাস)</div><div class="val">\${bn(m.meals)}</div></div>
-        <div class="stat"><div class="lbl">আমার খরচ</div><div class="val">\${tk(m.totalCost)}</div></div>
-        <div class="stat"><div class="lbl">আমার ব্যালেন্স</div><div class="val \${balClass(m.balance)}">\${signed(m.balance)}</div></div>
+        <div class="stat hl"><div class="lbl">Meal rate (this month)</div><div class="val">\${tk(d.month.mealRate)}</div></div>
+        <div class="stat"><div class="lbl">My meals</div><div class="val">\${num(m.meals)}</div></div>
+        <div class="stat"><div class="lbl">My cost</div><div class="val">\${tk(m.totalCost)}</div></div>
+        <div class="stat"><div class="lbl">My balance</div><div class="val \${balClass(m.balance)}">\${signed(m.balance)}</div></div>
       </div>
 
       <div class="card">
-        <div class="card-head"><h3>আজকের মিল · \${fmtDate(d.today)}</h3>
-          <button class="btn sm" data-act="go" data-page="\${isMgr() ? 'daymeal' : 'mymeal'}">পরিবর্তন</button></div>
+        <div class="card-head"><h3>Mess meals today · \${fmtDate(d.today)}</h3>
+          \${isMgr() ? '<button class="btn sm" data-act="go" data-page="daymeal">Edit</button>' : ''}</div>
         <div class="grid2">
-          <div class="stat"><div class="lbl">☀️ দুপুর — মোট</div><div class="val">\${bn(d.todayMeals.lunch)}</div><div class="small muted">আমার: \${bn(d.myToday.lunch)}</div></div>
-          <div class="stat"><div class="lbl">🌙 রাত — মোট</div><div class="val">\${bn(d.todayMeals.dinner)}</div><div class="small muted">আমার: \${bn(d.myToday.dinner)}</div></div>
+          <div class="stat"><div class="lbl">☀️ Lunch</div><div class="val">\${num(d.todayMeals.lunch)}</div></div>
+          <div class="stat"><div class="lbl">🌙 Dinner</div><div class="val">\${num(d.todayMeals.dinner)}</div></div>
         </div>
-        <p class="small muted" style="margin:10px 0 0">আগামীকাল: দুপুর \${bn(d.tomorrowMeals.lunch)} · রাত \${bn(d.tomorrowMeals.dinner)} জন</p>
+        <p class="small muted" style="margin:10px 0 0">Tomorrow: lunch \${num(d.tomorrowMeals.lunch)} · dinner \${num(d.tomorrowMeals.dinner)}</p>
       </div>
 
-      \${d.pendingMemos && isMgr() ? \`<div class="card note row"><span>📄 \${bn(d.pendingMemos)}টি বাজারের মেমো যাচাইয়ের অপেক্ষায়</span>
-        <button class="btn sm primary" style="flex:none" data-act="go" data-page="memo">দেখুন</button></div>\` : ''}
+      \${d.pendingMemos && isMgr() ? \`<div class="card note row"><span>📄 \${plural(d.pendingMemos, 'bazar memo')} waiting for review</span>
+        <button class="btn sm primary" style="flex:none" data-act="go" data-page="memo">Review</button></div>\` : ''}
 
       <div class="card">
-        <div class="card-head"><h3>সামনের ৭ দিনের ডিউটি</h3><button class="btn sm" data-act="go" data-page="duty">সব দেখুন</button></div>
-        <div class="list">\${d.duties.length ? d.duties.map(dutyItem).join('') : '<div class="empty">কোনো ডিউটি নেই</div>'}</div>
+        <div class="card-head"><h3>Duties — next 7 days</h3><button class="btn sm" data-act="go" data-page="duty">See all</button></div>
+        <div class="list">\${d.duties.length ? d.duties.map(dutyItem).join('') : '<div class="empty">No duties</div>'}</div>
       </div>
 
       <div class="card">
-        <h3>এই মাসের মেস হিসাব</h3>
+        <h3>This month at a glance</h3>
         <div class="list">
-          <div class="item"><span class="grow">মোট মিল</span><span class="amount">\${bn(d.month.totalMeals)}</span></div>
-          <div class="item"><span class="grow">মোট বাজার</span><span class="amount">\${tk(d.month.totalBazar)}</span></div>
-          <div class="item"><span class="grow">সাধারণ খরচ</span><span class="amount">\${tk(d.month.totalShared)}</span></div>
-          <div class="item"><span class="grow">মোট টাকা জমা</span><span class="amount">\${tk(d.month.totalDeposit)}</span></div>
-          <div class="item"><span class="grow">ম্যানেজারের হাতে আছে</span><span class="amount \${balClass(d.month.cashInHand)}">\${tk(d.month.cashInHand)}</span></div>
+          <div class="item"><span class="grow">Total meals</span><span class="amount">\${num(d.month.totalMeals)}</span></div>
+          <div class="item"><span class="grow">Total bazar</span><span class="amount">\${tk(d.month.totalBazar)}</span></div>
+          <div class="item"><span class="grow">Shared costs</span><span class="amount">\${tk(d.month.totalShared)}</span></div>
+          <div class="item"><span class="grow">Total deposits</span><span class="amount">\${tk(d.month.totalDeposit)}</span></div>
+          <div class="item"><span class="grow">Cash with manager</span><span class="amount \${balClass(d.month.cashInHand)}">\${tk(d.month.cashInHand)}</span></div>
         </div>
       </div>\`;
   }
 };
 
-/* ---------------- আমার মিল ---------------- */
+ACT['quick-meal'] = async el => {
+  const day = S.quick.days[Number(el.dataset.i)];
+  const slot = el.dataset.slot;
+  const payload = { date: day.date };
+  payload[slot] = day[slot] ? 0 : 1;
+  Object.assign(day, await call('meals.setMy', payload));
+  $('#quickBox').innerHTML = quickMeals();
+  toast(\`\${fmtDate(day.date)} — \${slot} \${day[slot] ? 'ON' : 'OFF'}\`, 'ok');
+};
+
+/* ---------------- My meals ---------------- */
 function stepper(act, date, slot, val, locked, max) {
-  return \`<div class="slot">\${slot === 'lunch' ? '☀️ দুপুর' : '🌙 রাত'}
+  return \`<div class="slot">\${SLOT[slot]}
     <div class="stepper \${val > 0 ? 'on' : ''} \${locked ? 'locked' : ''}">
       <button data-act="\${act}" data-date="\${date}" data-slot="\${slot}" data-n="-1" \${locked || val <= 0 ? 'disabled' : ''}>−</button>
-      <span class="v">\${locked ? '🔒' : ''}\${bn(val)}</span>
+      <span class="v">\${locked ? '🔒' : ''}\${num(val)}</span>
       <button data-act="\${act}" data-date="\${date}" data-slot="\${slot}" data-n="1" \${locked || val >= max ? 'disabled' : ''}>+</button>
     </div></div>\`;
 }
@@ -1944,45 +2053,47 @@ function myMealRows() {
   const st = S.myMeals;
   return st.days.map(d => \`<div class="meal-day \${d.date === st.today ? 'today' : ''}">
       <div class="d"><strong>\${fmtDate(d.date)}</strong>
-        <span class="small muted">\${d.date === st.today ? 'আজ' : d.date === addDays(st.today, 1) ? 'আগামীকাল' : ''}
-        \${d.isDefault ? '<span class="badge gray">ডিফল্ট</span>' : ''}</span></div>
+        <span class="small muted">\${d.date === st.today ? 'Today' : d.date === addDays(st.today, 1) ? 'Tomorrow' : ''}
+        \${d.isDefault ? '<span class="badge gray">Default</span>' : ''}</span></div>
       \${stepper('meal-step', d.date, 'lunch', d.lunch, d.lockLunch, st.maxGuestMeal)}
       \${stepper('meal-step', d.date, 'dinner', d.dinner, d.lockDinner, st.maxGuestMeal)}
     </div>\`).join('');
 }
 
 PAGES.mymeal = {
-  title: 'আমার মিল', short: 'আমার মিল', icon: '🍽️', roles: ALL,
+  title: 'My meals', short: 'My meals', icon: '🍽️', roles: ALL,
   async render(v, p) {
     const from = p.from || todayStr();
     S.myMeals = await call('meals.my', { from: from, to: addDays(from, 6) });
     const st = S.myMeals;
     v.innerHTML = \`
       <div class="card">
-        <div class="card-head"><h3>কবে কবে মিল খাবেন</h3>
-          <button class="btn sm primary" data-act="meal-range">একসাথে অনেক দিন</button></div>
-        <p class="small muted" style="margin-top:0">আজকের দুপুরের মিল <b>\${esc(st.lunchCutoff)}</b> এবং রাতের মিল <b>\${esc(st.dinnerCutoff)}</b>
-          এর আগে পরিবর্তন করা যাবে। গেস্ট থাকলে + চেপে সংখ্যা বাড়ান।</p>
+        <div class="card-head"><h3>Which meals will you eat?</h3>
+          <button class="btn sm primary" data-act="meal-range">Many days at once</button></div>
+        <p class="small muted" style="margin-top:0">Today's lunch can be changed until <b>\${esc(st.lunchCutoff)}</b> and dinner until
+          <b>\${esc(st.dinnerCutoff)}</b>. Have a guest? Press + to add a meal.</p>
         <div class="switcher">
-          <button class="btn sm" data-act="meal-week" data-n="-7">‹ আগের</button>
+          <button class="btn sm" data-act="meal-week" data-n="-7">‹ Prev</button>
           <strong>\${fmtDate(st.days[0].date, { day: 'numeric', month: 'short' })} – \${fmtDate(st.days[6].date, { day: 'numeric', month: 'short' })}</strong>
-          <button class="btn sm" data-act="meal-week" data-n="7">পরের ›</button>
+          <button class="btn sm" data-act="meal-week" data-n="7">Next ›</button>
         </div>
         <div id="myMealList">\${myMealRows()}</div>
       </div>
       <div class="card">
-        <h3>ডিফল্ট মিল</h3>
-        <p class="small muted" style="margin-top:0">চালু থাকলে প্রতিদিন আপনাআপনি মিল বসে যাবে, শুধু যেদিন খাবেন না সেদিন বন্ধ করবেন।</p>
+        <h3>Default meals</h3>
+        <p class="small muted" style="margin-top:0">When on, your meal is added automatically every day — you only switch it off on days you won't eat.</p>
         <form id="prefsForm" class="row">
-          <label class="check"><input type="checkbox" name="autoLunch" \${st.autoLunch === '1' ? 'checked' : ''}> ☀️ দুপুর</label>
-          <label class="check"><input type="checkbox" name="autoDinner" \${st.autoDinner === '1' ? 'checked' : ''}> 🌙 রাত</label>
-          <button class="btn" type="submit" style="flex:none">সেভ</button>
+          <label class="check"><input type="checkbox" name="autoLunch" \${st.autoLunch === '1' ? 'checked' : ''}> ☀️ Lunch</label>
+          <label class="check"><input type="checkbox" name="autoDinner" \${st.autoDinner === '1' ? 'checked' : ''}> 🌙 Dinner</label>
+          <button class="btn" type="submit" style="flex:none">Save</button>
         </form>
       </div>\`;
     $('#prefsForm').onsubmit = async e => {
       e.preventDefault();
-      S.user = await call('me.prefs', formData(e.target));
-      toast('ডিফল্ট মিল সেভ হয়েছে', 'ok');
+      const user = await call('me.prefs', formData(e.target)).catch(() => null);
+      if (!user) return;
+      S.user = user;
+      toast('Default meals saved', 'ok');
       refresh();
     };
   }
@@ -2000,51 +2111,50 @@ ACT['meal-step'] = async el => {
   const next = Math.max(0, Math.min(st.maxGuestMeal, day[slot] + Number(el.dataset.n)));
   const payload = { date: day.date };
   payload[slot] = next;
-  const res = await call('meals.setMy', payload);
-  Object.assign(day, res);
+  Object.assign(day, await call('meals.setMy', payload));
   $('#myMealList').innerHTML = myMealRows();
-  toast(\`\${fmtDate(day.date)} — \${slot === 'lunch' ? 'দুপুর' : 'রাত'}: \${bn(next)} মিল\`, 'ok');
+  toast(\`\${fmtDate(day.date)} — \${slot}: \${plural(next, 'meal')}\`, 'ok');
 };
 
 ACT['meal-range'] = () => {
-  const opts = \`<option value="">অপরিবর্তিত</option><option value="1">চালু (১টি)</option><option value="0">বন্ধ</option>\`;
-  openModal('একসাথে অনেক দিনের মিল', \`<form class="stack">
+  const opts = \`<option value="">No change</option><option value="1">On (1 meal)</option><option value="0">Off</option>\`;
+  openModal('Meals for many days', \`<form class="stack">
       <div class="grid2">
-        <label>শুরু<input type="date" name="from" value="\${todayStr()}" required></label>
-        <label>শেষ<input type="date" name="to" value="\${addDays(todayStr(), 4)}" required></label>
+        <label>From<input type="date" name="from" value="\${todayStr()}" required></label>
+        <label>To<input type="date" name="to" value="\${addDays(todayStr(), 4)}" required></label>
       </div>
       <div class="grid2">
-        <label>☀️ দুপুর<select name="lunch">\${opts}</select></label>
-        <label>🌙 রাত<select name="dinner">\${opts}</select></label>
+        <label>☀️ Lunch<select name="lunch">\${opts}</select></label>
+        <label>🌙 Dinner<select name="dinner">\${opts}</select></label>
       </div>
-      <p class="small muted">যেমন: বাড়ি যাচ্ছেন — দুই বেলাই "বন্ধ" দিন। সময় পেরিয়ে যাওয়া বেলা বদলাবে না।</p>
-      <button class="btn primary" type="submit">সেভ করুন</button></form>\`, async data => {
+      <p class="small muted">Example: going home — set both to "Off". Meals whose time has passed won't change.</p>
+      <button class="btn primary" type="submit">Save</button></form>\`, async data => {
     const res = await call('meals.setMyRange', data);
-    toast(\`\${bn(res.changed)} দিনের মিল আপডেট হয়েছে\` + (res.skipped ? \` (\${bn(res.skipped)}টি বেলার সময় শেষ)\` : ''), 'ok');
+    toast(\`\${plural(res.changed, 'day')} updated\` + (res.skipped ? \` (\${plural(res.skipped, 'meal')} already closed)\` : ''), 'ok');
     refresh();
   });
 };
 
-/* ---------------- মেমো ---------------- */
+/* ---------------- Memos ---------------- */
 PAGES.memo = {
-  title: 'বাজারের মেমো', short: 'মেমো', icon: '🧾', roles: ALL,
+  title: 'Bazar memos', short: 'Memos', icon: '🧾', roles: ALL,
   async render(v, p) {
     const status = p.status === undefined ? (isMgr() ? 'pending' : '') : p.status;
     const list = await call('memos.list', { month: S.month || thisMonth(), status: status });
     const total = list.reduce((s, m) => s + Number(m.amount), 0);
     v.innerHTML = \`
       <div class="toolbar">
-        <button class="btn primary" data-act="memo-new">📷 মেমো আপলোড</button>
+        <button class="btn primary" data-act="memo-new">📷 Upload memo</button>
         \${isMgr() ? \`<select data-chg="memo-filter" style="flex:1">
-          <option value="pending" \${status === 'pending' ? 'selected' : ''}>অপেক্ষমাণ</option>
-          <option value="" \${status === '' ? 'selected' : ''}>সব মেমো</option>
-          <option value="approved" \${status === 'approved' ? 'selected' : ''}>অনুমোদিত</option>
-          <option value="rejected" \${status === 'rejected' ? 'selected' : ''}>বাতিল</option></select>\` : ''}
+          <option value="pending" \${status === 'pending' ? 'selected' : ''}>Pending</option>
+          <option value="" \${status === '' ? 'selected' : ''}>All memos</option>
+          <option value="approved" \${status === 'approved' ? 'selected' : ''}>Approved</option>
+          <option value="rejected" \${status === 'rejected' ? 'selected' : ''}>Rejected</option></select>\` : ''}
       </div>
       \${monthNav()}
       <div class="card">
-        <div class="card-head"><h3>\${bn(list.length)}টি মেমো</h3><span class="amount">\${tk(total)}</span></div>
-        <div class="list">\${list.length ? list.map(memoItem).join('') : '<div class="empty">এই মাসে কোনো মেমো নেই</div>'}</div>
+        <div class="card-head"><h3>\${plural(list.length, 'memo')}</h3><span class="amount">\${tk(total)}</span></div>
+        <div class="list">\${list.length ? list.map(memoItem).join('') : '<div class="empty">No memos this month</div>'}</div>
       </div>\`;
   }
 };
@@ -2052,77 +2162,77 @@ PAGES.memo = {
 function memoItem(m) {
   const mine = m.userId === S.user.id;
   const btns = [];
-  if (m.hasImage) btns.push(\`<button class="btn sm" data-act="show-image" data-kind="memo" data-id="\${m.id}">🖼️ ছবি</button>\`);
-  if (isMgr() && m.status === 'pending') btns.push(\`<button class="btn sm primary" data-act="memo-review" data-id="\${m.id}">যাচাই</button>\`);
-  if (m.status !== 'approved' && (isMgr() || (mine && m.status === 'pending'))) btns.push(\`<button class="btn sm danger" data-act="memo-delete" data-id="\${m.id}">মুছুন</button>\`);
+  if (m.hasImage) btns.push(\`<button class="btn sm" data-act="show-image" data-kind="memo" data-id="\${m.id}">🖼️ Photo</button>\`);
+  if (isMgr() && m.status === 'pending') btns.push(\`<button class="btn sm primary" data-act="memo-review" data-id="\${m.id}">Review</button>\`);
+  if (m.status !== 'approved' && (isMgr() || (mine && m.status === 'pending'))) btns.push(\`<button class="btn sm danger" data-act="memo-delete" data-id="\${m.id}">Delete</button>\`);
   return \`<div class="item" style="flex-wrap:wrap">
     <div class="grow">
       <div class="title">\${esc(m.name)} · \${tk(m.amount)}</div>
-      <div class="sub">\${fmtDate(m.date)}\${m.note ? ' · ' + esc(m.note) : ''}\${m.reviewedByName ? ' · যাচাই: ' + esc(m.reviewedByName) : ''}</div>
+      <div class="sub">\${fmtDate(m.date)}\${m.note ? ' · ' + esc(m.note) : ''}\${m.reviewedByName ? ' · reviewed by ' + esc(m.reviewedByName) : ''}</div>
     </div>
     \${badge(MEMO_STATUS, m.status)}
-    <div class="row" style="flex-basis:100%;justify-content:flex-end;flex:0 0 100%">\${btns.map(b => \`<span style="flex:none">\${b}</span>\`).join('')}</div>
+    <div class="row" style="flex:0 0 100%;justify-content:flex-end">\${btns.map(b => \`<span style="flex:none">\${b}</span>\`).join('')}</div>
   </div>\`;
 }
 
 CHG['memo-filter'] = el => go('memo', { status: el.value });
 
 ACT['memo-new'] = () => {
-  openModal('বাজারের মেমো আপলোড', \`<form class="stack">
-      <label>বাজারের তারিখ<input type="date" name="date" value="\${todayStr()}" required></label>
-      <label>মোট টাকা<input type="number" name="amount" min="1" step="0.01" inputmode="decimal" required></label>
-      <label>কী কী কিনেছেন (ঐচ্ছিক)<textarea name="note" placeholder="চাল, ডাল, মাছ..."></textarea></label>
-      <label>মেমোর ছবি<input type="file" accept="image/*" data-chg="preview" data-target="memoPrev" required></label>
+  openModal('Upload bazar memo', \`<form class="stack">
+      <label>Bazar date<input type="date" name="date" value="\${todayStr()}" required></label>
+      <label>Total amount<input type="number" name="amount" min="1" step="0.01" inputmode="decimal" required></label>
+      <label>What did you buy? (optional)<textarea name="note" placeholder="Rice, lentils, fish..."></textarea></label>
+      <label>Memo photo<input type="file" accept="image/*" data-chg="preview" data-target="memoPrev" required></label>
       <div id="memoPrev"></div>
-      <button class="btn primary" type="submit">আপলোড করুন</button></form>\`, async (data, form) => {
+      <button class="btn primary" type="submit">Upload</button></form>\`, async (data, form) => {
     data.image = await imageFromForm(form);
-    if (!data.image) { toast('মেমোর ছবি দিন', 'err'); return true; }
+    if (!data.image) { toast('Add a photo of the memo', 'err'); return true; }
     await call('memos.upload', data);
-    toast('মেমো আপলোড হয়েছে, ম্যানেজার যাচাই করবেন', 'ok');
+    toast('Memo uploaded — the manager will review it', 'ok');
     S.month = data.date.slice(0, 7);
     go('memo', { status: isMgr() ? 'pending' : '' });
   });
 };
 
 ACT['memo-delete'] = async el => {
-  if (!(await confirmBox('মেমোটি মুছে ফেলবেন?', 'মুছুন'))) return;
+  if (!(await confirmBox('Delete this memo?', 'Delete'))) return;
   await call('memos.delete', { id: el.dataset.id });
-  toast('মেমো মুছে ফেলা হয়েছে', 'ok');
+  toast('Memo deleted', 'ok');
   refresh();
 };
 
-/* ---------------- ডিউটি ---------------- */
+/* ---------------- Duties ---------------- */
 PAGES.duty = {
-  title: 'বাজার ও পরিষ্কারের ডিউটি', short: 'ডিউটি', icon: '🗓️', roles: ALL,
+  title: 'Bazar & cleaning duties', short: 'Duties', icon: '🗓️', roles: ALL,
   async render(v, p) {
     const type = p.type || '';
     const list = await call('duties.list', { month: S.month || thisMonth(), type: type });
     v.innerHTML = \`
       \${isMgr() ? \`<div class="toolbar">
-        <button class="btn primary" data-act="duty-new">+ ডিউটি</button>
-        <button class="btn" data-act="duty-generate">🔁 রোস্টার তৈরি</button></div>\` : ''}
+        <button class="btn primary" data-act="duty-new">+ Duty</button>
+        <button class="btn" data-act="duty-generate">🔁 Make a roster</button></div>\` : ''}
       \${monthNav()}
       <div class="toolbar">
         <select data-chg="duty-filter">
-          <option value="" \${type === '' ? 'selected' : ''}>সব ডিউটি</option>
-          <option value="bazar" \${type === 'bazar' ? 'selected' : ''}>🛒 বাজার</option>
-          <option value="clean" \${type === 'clean' ? 'selected' : ''}>🚿 ওয়াশরুম পরিষ্কার</option>
+          <option value="" \${type === '' ? 'selected' : ''}>All duties</option>
+          <option value="bazar" \${type === 'bazar' ? 'selected' : ''}>🛒 Bazar</option>
+          <option value="clean" \${type === 'clean' ? 'selected' : ''}>🚿 Washroom cleaning</option>
         </select>
       </div>
-      <div class="card"><div class="list">\${list.length ? list.map(dutyItem).join('') : '<div class="empty">এই মাসে কোনো ডিউটি নেই</div>'}</div></div>\`;
+      <div class="card"><div class="list">\${list.length ? list.map(dutyItem).join('') : '<div class="empty">No duties this month</div>'}</div></div>\`;
   }
 };
 CHG['duty-filter'] = el => go('duty', { type: el.value });
 
-/* ---------------- রিপোর্ট ---------------- */
+/* ---------------- Report ---------------- */
 PAGES.report = {
-  title: 'মাসিক রিপোর্ট', short: 'রিপোর্ট', icon: '📊', roles: ALL,
+  title: 'Monthly report', short: 'Report', icon: '📊', roles: ALL,
   async render(v, p) {
     const r = await call('report.month', { month: S.month || thisMonth(), matrix: !!p.matrix });
     const rows = r.members.map(m => \`<tr \${m.userId === S.user.id ? 'style="background:var(--primary-soft)"' : ''}>
-        <td>\${esc(m.name)}</td><td class="num">\${bn(m.lunch)}+\${bn(m.dinner)}=\${bn(m.meals)}</td>
+        <td>\${esc(m.name)}</td><td class="num">\${num(m.lunch)}+\${num(m.dinner)}=\${num(m.meals)}</td>
         <td class="num">\${tk(m.mealCost)}</td><td class="num">\${tk(m.sharedCost)}</td><td class="num">\${tk(m.totalCost)}</td>
-        <td class="num">\${tk(m.credit)}\${m.paidBazar ? \`<div class="small muted">বাজার \${tk(m.paidBazar)}</div>\` : ''}</td>
+        <td class="num">\${tk(m.credit)}\${m.paidBazar ? \`<div class="small muted">bazar \${tk(m.paidBazar)}</div>\` : ''}</td>
         <td class="num \${balClass(m.balance)}">\${signed(m.balance)}</td></tr>\`).join('');
     const sum = k => r.members.reduce((s, m) => s + Number(m[k]), 0);
     const days = r.days.filter(d => d.lunch || d.dinner);
@@ -2130,77 +2240,77 @@ PAGES.report = {
     v.innerHTML = \`
       \${monthNav()}
       <div class="stats">
-        <div class="stat hl"><div class="lbl">মিল রেট</div><div class="val">\${tk(r.mealRate)}</div></div>
-        <div class="stat"><div class="lbl">মোট মিল</div><div class="val">\${bn(r.totalMeals)}</div><div class="small muted">দুপুর \${bn(r.totalLunch)} · রাত \${bn(r.totalDinner)}</div></div>
-        <div class="stat"><div class="lbl">মোট বাজার</div><div class="val">\${tk(r.totalBazar)}</div></div>
-        <div class="stat"><div class="lbl">সাধারণ খরচ</div><div class="val">\${tk(r.totalShared)}</div><div class="small muted">জনপ্রতি \${tk(r.sharedEach)}</div></div>
-        <div class="stat"><div class="lbl">মোট জমা</div><div class="val">\${tk(r.totalDeposit)}</div></div>
-        <div class="stat"><div class="lbl">ফান্ড থেকে খরচ</div><div class="val">\${tk(r.fundSpent)}</div></div>
-        <div class="stat"><div class="lbl">হাতে আছে</div><div class="val \${balClass(r.cashInHand)}">\${tk(r.cashInHand)}</div></div>
+        <div class="stat hl"><div class="lbl">Meal rate</div><div class="val">\${tk(r.mealRate)}</div></div>
+        <div class="stat"><div class="lbl">Total meals</div><div class="val">\${num(r.totalMeals)}</div><div class="small muted">lunch \${num(r.totalLunch)} · dinner \${num(r.totalDinner)}</div></div>
+        <div class="stat"><div class="lbl">Total bazar</div><div class="val">\${tk(r.totalBazar)}</div></div>
+        <div class="stat"><div class="lbl">Shared costs</div><div class="val">\${tk(r.totalShared)}</div><div class="small muted">\${tk(r.sharedEach)} each</div></div>
+        <div class="stat"><div class="lbl">Total deposits</div><div class="val">\${tk(r.totalDeposit)}</div></div>
+        <div class="stat"><div class="lbl">Spent from fund</div><div class="val">\${tk(r.fundSpent)}</div></div>
+        <div class="stat"><div class="lbl">Cash with manager</div><div class="val \${balClass(r.cashInHand)}">\${tk(r.cashInHand)}</div></div>
       </div>
 
       <div class="card">
-        <div class="card-head"><h3>সদস্যভিত্তিক হিসাব</h3><button class="btn sm" data-act="print">🖨️ প্রিন্ট</button></div>
+        <div class="card-head"><h3>Per member</h3><button class="btn sm" data-act="print">🖨️ Print</button></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>নাম</th><th class="num">মিল (দু+রা)</th><th class="num">মিল খরচ</th><th class="num">সাধারণ</th>
-            <th class="num">মোট খরচ</th><th class="num">জমা</th><th class="num">ব্যালেন্স</th></tr></thead>
-          <tbody>\${rows || '<tr><td colspan="7" class="empty">কোনো তথ্য নেই</td></tr>'}</tbody>
-          <tfoot><tr><td>মোট</td><td class="num">\${bn(r.totalMeals)}</td><td class="num">\${tk(sum('mealCost'))}</td><td class="num">\${tk(sum('sharedCost'))}</td>
+          <thead><tr><th>Name</th><th class="num">Meals (L+D)</th><th class="num">Meal cost</th><th class="num">Shared</th>
+            <th class="num">Total cost</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
+          <tbody>\${rows || '<tr><td colspan="7" class="empty">No data</td></tr>'}</tbody>
+          <tfoot><tr><td>Total</td><td class="num">\${num(r.totalMeals)}</td><td class="num">\${tk(sum('mealCost'))}</td><td class="num">\${tk(sum('sharedCost'))}</td>
             <td class="num">\${tk(sum('totalCost'))}</td><td class="num">\${tk(sum('credit'))}</td><td class="num">\${signed(sum('balance'))}</td></tr></tfoot>
         </table></div>
-        <p class="small muted">ব্যালেন্স + হলে মেস থেকে ফেরত পাবেন, − হলে মেসকে দিতে হবে। জমার মধ্যে নিজের টাকায় করা বাজারও ধরা আছে।</p>
+        <p class="small muted">Balance + means the member gets money back, − means they still have to pay. "Paid" includes bazar done with their own money.</p>
       </div>
 
       <div class="card">
-        <div class="card-head"><h3>দিনভিত্তিক মিল</h3>
-          <button class="btn sm" data-act="report-matrix">\${p.matrix ? 'সারসংক্ষেপ' : '📋 পুরো মিল শিট'}</button></div>
+        <div class="card-head"><h3>Meals by day</h3>
+          <button class="btn sm" data-act="report-matrix">\${p.matrix ? 'Summary' : '📋 Full meal sheet'}</button></div>
         \${p.matrix ? mealSheet(r) : \`<div class="table-wrap"><table>
-          <thead><tr><th>তারিখ</th><th class="num">☀️ দুপুর</th><th class="num">🌙 রাত</th><th class="num">মোট</th></tr></thead>
-          <tbody>\${days.map(d => \`<tr><td>\${fmtDate(d.date)}</td><td class="num">\${bn(d.lunch)}</td><td class="num">\${bn(d.dinner)}</td><td class="num">\${bn(d.lunch + d.dinner)}</td></tr>\`).join('') ||
-            '<tr><td colspan="4" class="empty">কোনো মিল নেই</td></tr>'}</tbody></table></div>\`}
+          <thead><tr><th>Date</th><th class="num">☀️ Lunch</th><th class="num">🌙 Dinner</th><th class="num">Total</th></tr></thead>
+          <tbody>\${days.map(d => \`<tr><td>\${fmtDate(d.date)}</td><td class="num">\${num(d.lunch)}</td><td class="num">\${num(d.dinner)}</td><td class="num">\${num(d.lunch + d.dinner)}</td></tr>\`).join('') ||
+            '<tr><td colspan="4" class="empty">No meals yet</td></tr>'}</tbody></table></div>\`}
       </div>\`;
   }
 };
 
 function mealSheet(r) {
-  const head = r.days.map(d => \`<th>\${bn(Number(d.date.slice(8)))}</th>\`).join('');
+  const head = r.days.map(d => \`<th>\${Number(d.date.slice(8))}</th>\`).join('');
   const body = r.members.map(m => {
     const row = (r.matrix || {})[m.userId] || {};
     return \`<tr><td>\${esc(m.name)}</td>\${r.days.map(d => {
       const c = row[d.date];
-      return \`<td>\${c ? bn(c[0]) + '/' + bn(c[1]) : '<span class="muted">–</span>'}</td>\`;
-    }).join('')}<td><b>\${bn(m.meals)}</b></td></tr>\`;
+      return \`<td>\${c ? c[0] + '/' + c[1] : '<span class="muted">–</span>'}</td>\`;
+    }).join('')}<td><b>\${num(m.meals)}</b></td></tr>\`;
   }).join('');
-  return \`<p class="small muted" style="margin-top:0">প্রতিটি ঘরে দুপুর/রাত</p>
-    <div class="table-wrap"><table class="sheet"><thead><tr><th>নাম</th>\${head}<th>মোট</th></tr></thead><tbody>\${body}</tbody></table></div>\`;
+  return \`<p class="small muted" style="margin-top:0">Each cell is lunch/dinner</p>
+    <div class="table-wrap"><table class="sheet"><thead><tr><th>Name</th>\${head}<th>Total</th></tr></thead><tbody>\${body}</tbody></table></div>\`;
 }
 
 ACT['report-matrix'] = () => go('report', S.params.matrix ? {} : { matrix: 1 });
 ACT.print = () => window.print();
 
-/* ---------------- প্রোফাইল ---------------- */
+/* ---------------- Profile ---------------- */
 PAGES.profile = {
-  title: 'প্রোফাইল', icon: '👤', roles: ALL,
+  title: 'Profile', icon: '👤', roles: ALL,
   async render(v) {
     const u = S.user;
     v.innerHTML = \`
       <div class="card">
         <h3>\${esc(u.name)} <span class="badge">\${ROLE_LABEL[u.role]}</span></h3>
         <div class="list">
-          <div class="item"><span class="grow muted">ইউজারনেম</span><span>\${esc(u.username)}</span></div>
-          <div class="item"><span class="grow muted">রুম</span><span>\${esc(u.room || '—')}</span></div>
-          <div class="item"><span class="grow muted">ফোন</span><span>\${esc(u.phone || '—')}</span></div>
+          <div class="item"><span class="grow muted">Username</span><span>\${esc(u.username)}</span></div>
+          <div class="item"><span class="grow muted">Room</span><span>\${esc(u.room || '—')}</span></div>
+          <div class="item"><span class="grow muted">Phone</span><span>\${esc(u.phone || '—')}</span></div>
         </div>
       </div>
       <div class="card">
-        <h3>পাসওয়ার্ড পরিবর্তন</h3>
+        <h3>Change password</h3>
         <form id="pwForm" class="stack">
-          <label>বর্তমান পাসওয়ার্ড<input type="password" name="oldPassword" required autocomplete="current-password"></label>
-          <label>নতুন পাসওয়ার্ড<input type="password" name="newPassword" required minlength="6" autocomplete="new-password"></label>
-          <button class="btn primary" type="submit">পরিবর্তন করুন</button>
+          <label>Current password<input type="password" name="oldPassword" required autocomplete="current-password"></label>
+          <label>New password<input type="password" name="newPassword" required minlength="4" autocomplete="new-password"></label>
+          <button class="btn primary" type="submit">Change password</button>
         </form>
       </div>
-      <button class="btn danger block" data-act="logout">🚪 লগআউট</button>\`;
+      <button class="btn danger block" data-act="logout">🚪 Log out</button>\`;
     $('#pwForm').onsubmit = async e => {
       e.preventDefault();
       const res = await call('me.password', formData(e.target)).catch(() => null);
@@ -2208,7 +2318,7 @@ PAGES.profile = {
       S.token = res.token;
       store.set('token', res.token);
       e.target.reset();
-      toast('পাসওয়ার্ড পরিবর্তন হয়েছে', 'ok');
+      toast('Password changed', 'ok');
     };
   }
 };
@@ -2216,29 +2326,29 @@ PAGES.profile = {
 
   <script>
 /* =========================================================
-   ম্যানেজার ও অ্যাডমিন: মিল এন্ট্রি, খরচ, জমা, মেমো যাচাই,
-   ডিউটি রোস্টার, সদস্য ও সেটিংস
+   Manager & admin: daily meal entry, expenses, deposits,
+   memo review, duty roster, members and settings
    ========================================================= */
 
-/* ---------------- দিনভিত্তিক মিল এন্ট্রি ---------------- */
+/* ---------------- Daily meal entry ---------------- */
 function dayMealBody() {
   const st = S.day;
   let l = 0, d = 0;
   st.rows.forEach(r => { l += r.lunch; d += r.dinner; });
   return \`<div class="list">\${st.rows.map(r => \`<div class="meal-day">
       <div class="d"><strong>\${esc(r.name)}</strong><span class="small muted">\${esc(r.room || '')}
-        \${r.isDefault && !st.dirty ? '<span class="badge gray">ডিফল্ট</span>' : ''}</span></div>
+        \${r.isDefault && !st.dirty ? '<span class="badge gray">Default</span>' : ''}</span></div>
       \${stepper('day-step', r.userId, 'lunch', r.lunch, false, 20)}
       \${stepper('day-step', r.userId, 'dinner', r.dinner, false, 20)}
-    </div>\`).join('') || '<div class="empty">কোনো সক্রিয় সদস্য নেই</div>'}</div>
+    </div>\`).join('') || '<div class="empty">No active members</div>'}</div>
     <div class="grid2" style="margin-top:12px">
-      <div class="stat hl"><div class="lbl">☀️ দুপুর মোট</div><div class="val">\${bn(l)}</div></div>
-      <div class="stat hl"><div class="lbl">🌙 রাত মোট</div><div class="val">\${bn(d)}</div></div>
+      <div class="stat hl"><div class="lbl">☀️ Lunch total</div><div class="val">\${num(l)}</div></div>
+      <div class="stat hl"><div class="lbl">🌙 Dinner total</div><div class="val">\${num(d)}</div></div>
     </div>\`;
 }
 
 PAGES.daymeal = {
-  title: 'মিল এন্ট্রি (দিনভিত্তিক)', short: 'মিল এন্ট্রি', icon: '📝', roles: MGR,
+  title: 'Meal entry (by day)', short: 'Meal entry', icon: '📝', roles: MGR,
   async render(v) {
     S.date = S.date || todayStr();
     S.day = await call('meals.day', { date: S.date });
@@ -2254,12 +2364,12 @@ PAGES.daymeal = {
       </div>
       <div class="card">
         <div class="toolbar">
-          <button class="btn sm" data-act="day-all" data-slot="lunch" data-v="1">সবার দুপুর ✓</button>
-          <button class="btn sm" data-act="day-all" data-slot="dinner" data-v="1">সবার রাত ✓</button>
-          <button class="btn sm danger" data-act="day-all" data-slot="both" data-v="0">সব বন্ধ</button>
+          <button class="btn sm" data-act="day-all" data-slot="lunch" data-v="1">All lunch ✓</button>
+          <button class="btn sm" data-act="day-all" data-slot="dinner" data-v="1">All dinner ✓</button>
+          <button class="btn sm danger" data-act="day-all" data-slot="both" data-v="0">All off</button>
         </div>
         <div id="dayBody">\${dayMealBody()}</div>
-        <button class="btn primary block" style="margin-top:12px" data-act="day-save">💾 সেভ করুন</button>
+        <button class="btn primary block" style="margin-top:12px" data-act="day-save">💾 Save</button>
       </div>\`;
   }
 };
@@ -2267,7 +2377,7 @@ PAGES.daymeal = {
 ACT['day-shift'] = el => { S.date = addDays(S.date, Number(el.dataset.n)); refresh(); };
 CHG['day-pick'] = el => { if (el.value) { S.date = el.value; refresh(); } };
 ACT['day-step'] = el => {
-  const r = S.day.rows.filter(x => x.userId === el.dataset.date)[0];   // data-date এখানে userId বহন করে
+  const r = S.day.rows.filter(x => x.userId === el.dataset.date)[0];   // here data-date carries the userId
   r[el.dataset.slot] = Math.max(0, Math.min(20, r[el.dataset.slot] + Number(el.dataset.n)));
   S.day.dirty = true;
   $('#dayBody').innerHTML = dayMealBody();
@@ -2285,91 +2395,91 @@ ACT['day-save'] = async () => {
   S.day = await call('meals.saveDay', { date: S.date, entries: S.day.rows.map(r => ({ userId: r.userId, lunch: r.lunch, dinner: r.dinner })) });
   S.day.dirty = false;
   $('#dayBody').innerHTML = dayMealBody();
-  toast(fmtDate(S.date) + ' এর মিল সেভ হয়েছে', 'ok');
+  toast('Meals saved for ' + fmtDate(S.date), 'ok');
 };
 
-/* ---------------- খরচ ---------------- */
+/* ---------------- Expenses ---------------- */
 PAGES.expense = {
-  title: 'বাজার ও খরচ', short: 'খরচ', icon: '💸', roles: ALL,
+  title: 'Bazar & expenses', short: 'Expenses', icon: '💸', roles: ALL,
   async render(v) {
     const list = await call('expenses.list', { month: S.month || thisMonth() });
     S.expenses = list;
     let bazar = 0, shared = 0;
     list.forEach(e => { if (e.type === 'shared') shared += Number(e.amount); else bazar += Number(e.amount); });
     v.innerHTML = \`
-      \${isMgr() ? '<div class="toolbar"><button class="btn primary" data-act="exp-edit">+ খরচ যোগ করুন</button></div>' : ''}
+      \${isMgr() ? '<div class="toolbar"><button class="btn primary" data-act="exp-edit">+ Add expense</button></div>' : ''}
       \${monthNav()}
       <div class="grid2" style="margin-bottom:14px">
-        <div class="stat"><div class="lbl">🛒 বাজার (মিলের)</div><div class="val">\${tk(bazar)}</div></div>
-        <div class="stat"><div class="lbl">🏠 সাধারণ খরচ</div><div class="val">\${tk(shared)}</div></div>
+        <div class="stat"><div class="lbl">🛒 Bazar (meals)</div><div class="val">\${tk(bazar)}</div></div>
+        <div class="stat"><div class="lbl">🏠 Shared costs</div><div class="val">\${tk(shared)}</div></div>
       </div>
       <div class="card"><div class="list">\${list.length ? list.map(e => \`<div class="item">
         <div class="grow">
-          <div class="title">\${esc(e.description || (e.type === 'shared' ? 'সাধারণ খরচ' : 'বাজার'))}</div>
-          <div class="sub">\${fmtDate(e.date)} · <span class="badge \${e.type === 'shared' ? 'gray' : ''}">\${e.type === 'shared' ? 'সাধারণ' : 'বাজার'}</span>
-            \${e.paidBy ? ' · নিজের টাকায়: ' + esc(e.paidByName) : ' · ফান্ড থেকে'}</div>
+          <div class="title">\${esc(e.description || (e.type === 'shared' ? 'Shared cost' : 'Bazar'))}</div>
+          <div class="sub">\${fmtDate(e.date)} · <span class="badge \${e.type === 'shared' ? 'gray' : ''}">\${e.type === 'shared' ? 'Shared' : 'Bazar'}</span>
+            \${e.paidBy ? ' · paid by ' + esc(e.paidByName) : ' · from fund'}</div>
         </div>
         <span class="amount">\${tk(e.amount)}</span>
         \${e.hasImage ? \`<button class="btn sm" data-act="show-image" data-kind="expense" data-id="\${e.id}">🖼️</button>\` : ''}
         \${isMgr() ? \`<button class="btn sm" data-act="exp-edit" data-id="\${e.id}">✎</button>\` : ''}
-      </div>\`).join('') : '<div class="empty">এই মাসে কোনো খরচ নেই</div>'}</div></div>\`;
+      </div>\`).join('') : '<div class="empty">No expenses this month</div>'}</div></div>\`;
   }
 };
 
 ACT['exp-edit'] = async el => {
   const users = await getUsers();
   const e = (S.expenses || []).filter(x => x.id === el.dataset.id)[0] || { date: todayStr(), type: 'bazar' };
-  openModal(e.id ? 'খরচ সম্পাদনা' : 'নতুন খরচ', \`<form class="stack">
+  openModal(e.id ? 'Edit expense' : 'New expense', \`<form class="stack">
       <div class="grid2">
-        <label>তারিখ<input type="date" name="date" value="\${e.date}" required></label>
-        <label>ধরন<select name="type">
-          <option value="bazar" \${e.type !== 'shared' ? 'selected' : ''}>🛒 বাজার (মিলের)</option>
-          <option value="shared" \${e.type === 'shared' ? 'selected' : ''}>🏠 সাধারণ (সমান ভাগ)</option></select></label>
+        <label>Date<input type="date" name="date" value="\${e.date}" required></label>
+        <label>Type<select name="type">
+          <option value="bazar" \${e.type !== 'shared' ? 'selected' : ''}>🛒 Bazar (meals)</option>
+          <option value="shared" \${e.type === 'shared' ? 'selected' : ''}>🏠 Shared (split equally)</option></select></label>
       </div>
-      <label>টাকা<input type="number" name="amount" step="0.01" inputmode="decimal" value="\${e.amount || ''}" required></label>
-      <label>বিবরণ<input name="description" value="\${esc(e.description || '')}" placeholder="যেমন: মাছ, সবজি / গ্যাস বিল"></label>
-      <label>টাকা কে দিয়েছে<select name="paidBy">\${userOptions(users, e.paidBy, 'মেস ফান্ড (ম্যানেজার) থেকে')}</select></label>
-      <p class="small muted" style="margin:-6px 0 0">সদস্য নিজের পকেট থেকে দিলে তাকে বেছে নিন — টাকাটা তার জমায় যোগ হবে।</p>
-      <label>মেমোর ছবি (ঐচ্ছিক)<input type="file" accept="image/*" data-chg="preview" data-target="expPrev"></label>
+      <label>Amount<input type="number" name="amount" step="0.01" inputmode="decimal" value="\${e.amount || ''}" required></label>
+      <label>Description<input name="description" value="\${esc(e.description || '')}" placeholder="e.g. fish, vegetables / gas bill"></label>
+      <label>Who paid?<select name="paidBy">\${userOptions(users, e.paidBy, 'Mess fund (manager)')}</select></label>
+      <p class="small muted" style="margin:-6px 0 0">If a member paid from their own pocket, choose them — it is added to what they have paid.</p>
+      <label>Memo photo (optional)<input type="file" accept="image/*" data-chg="preview" data-target="expPrev"></label>
       <div id="expPrev"></div>
       <div class="row">
-        \${e.id ? '<button type="button" class="btn danger" data-act="exp-delete" data-id="' + e.id + '">মুছুন</button>' : ''}
-        <button class="btn primary" type="submit">সেভ</button>
+        \${e.id ? '<button type="button" class="btn danger" data-act="exp-delete" data-id="' + e.id + '">Delete</button>' : ''}
+        <button class="btn primary" type="submit">Save</button>
       </div></form>\`, async (data, form) => {
     data.id = e.id || '';
     data.image = await imageFromForm(form);
     await call('expenses.save', data);
-    toast('খরচ সেভ হয়েছে', 'ok');
+    toast('Expense saved', 'ok');
     S.month = data.date.slice(0, 7);
     refresh();
   });
 };
 
 ACT['exp-delete'] = async el => {
-  if (!(await confirmBox('এই খরচটি মুছে ফেলবেন?', 'মুছুন'))) return;
+  if (!(await confirmBox('Delete this expense?', 'Delete'))) return;
   await call('expenses.delete', { id: el.dataset.id });
-  toast('খরচ মুছে ফেলা হয়েছে', 'ok');
+  toast('Expense deleted', 'ok');
   refresh();
 };
 
-/* ---------------- জমা ---------------- */
+/* ---------------- Deposits ---------------- */
 PAGES.deposit = {
-  title: 'টাকা জমা', short: 'জমা', icon: '💰', roles: ALL,
+  title: 'Deposits', short: 'Deposits', icon: '💰', roles: ALL,
   async render(v) {
     const list = await call('deposits.list', { month: S.month || thisMonth() });
     S.deposits = list;
     const total = list.reduce((s, d) => s + Number(d.amount), 0);
     v.innerHTML = \`
-      \${isMgr() ? '<div class="toolbar"><button class="btn primary" data-act="dep-edit">+ জমা যোগ করুন</button></div>' : ''}
+      \${isMgr() ? '<div class="toolbar"><button class="btn primary" data-act="dep-edit">+ Add deposit</button></div>' : ''}
       \${monthNav()}
       <div class="card">
-        <div class="card-head"><h3>\${isMgr() ? 'মোট জমা' : 'আমার জমা'}</h3><span class="amount">\${tk(total)}</span></div>
+        <div class="card-head"><h3>\${isMgr() ? 'Total deposits' : 'My deposits'}</h3><span class="amount">\${tk(total)}</span></div>
         <div class="list">\${list.length ? list.map(d => \`<div class="item">
           <div class="grow"><div class="title">\${esc(d.name)}</div>
             <div class="sub">\${fmtDate(d.date)}\${d.note ? ' · ' + esc(d.note) : ''}</div></div>
           <span class="amount \${d.amount < 0 ? 'neg' : ''}">\${tk(d.amount)}</span>
           \${isMgr() ? \`<button class="btn sm" data-act="dep-edit" data-id="\${d.id}">✎</button>\` : ''}
-        </div>\`).join('') : '<div class="empty">এই মাসে কোনো জমা নেই</div>'}</div>
+        </div>\`).join('') : '<div class="empty">No deposits this month</div>'}</div>
       </div>\`;
   }
 };
@@ -2377,56 +2487,56 @@ PAGES.deposit = {
 ACT['dep-edit'] = async el => {
   const users = await getUsers();
   const d = (S.deposits || []).filter(x => x.id === el.dataset.id)[0] || { date: todayStr() };
-  openModal(d.id ? 'জমা সম্পাদনা' : 'নতুন জমা', \`<form class="stack">
-      <label>সদস্য<select name="userId" required>\${userOptions(users, d.userId, 'বেছে নিন')}</select></label>
+  openModal(d.id ? 'Edit deposit' : 'New deposit', \`<form class="stack">
+      <label>Member<select name="userId" required>\${userOptions(users, d.userId, 'Choose…')}</select></label>
       <div class="grid2">
-        <label>তারিখ<input type="date" name="date" value="\${d.date}" required></label>
-        <label>টাকা<input type="number" name="amount" step="0.01" inputmode="decimal" value="\${d.amount || ''}" required></label>
+        <label>Date<input type="date" name="date" value="\${d.date}" required></label>
+        <label>Amount<input type="number" name="amount" step="0.01" inputmode="decimal" value="\${d.amount || ''}" required></label>
       </div>
-      <label>নোট (ঐচ্ছিক)<input name="note" value="\${esc(d.note || '')}" placeholder="যেমন: বিকাশে / নগদ"></label>
-      <p class="small muted" style="margin:-6px 0 0">টাকা ফেরত দিলে বা আগের মাসের বাকি সমন্বয় করতে − (মাইনাস) দিন।</p>
+      <label>Note (optional)<input name="note" value="\${esc(d.note || '')}" placeholder="e.g. bKash / cash"></label>
+      <p class="small muted" style="margin:-6px 0 0">To record a refund or carry over last month's due, enter a negative (−) amount.</p>
       <div class="row">
-        \${d.id ? '<button type="button" class="btn danger" data-act="dep-delete" data-id="' + d.id + '">মুছুন</button>' : ''}
-        <button class="btn primary" type="submit">সেভ</button>
+        \${d.id ? '<button type="button" class="btn danger" data-act="dep-delete" data-id="' + d.id + '">Delete</button>' : ''}
+        <button class="btn primary" type="submit">Save</button>
       </div></form>\`, async data => {
     data.id = d.id || '';
     await call('deposits.save', data);
-    toast('জমা সেভ হয়েছে', 'ok');
+    toast('Deposit saved', 'ok');
     S.month = data.date.slice(0, 7);
     refresh();
   });
 };
 
 ACT['dep-delete'] = async el => {
-  if (!(await confirmBox('এই জমাটি মুছে ফেলবেন?', 'মুছুন'))) return;
+  if (!(await confirmBox('Delete this deposit?', 'Delete'))) return;
   await call('deposits.delete', { id: el.dataset.id });
-  toast('জমা মুছে ফেলা হয়েছে', 'ok');
+  toast('Deposit deleted', 'ok');
   refresh();
 };
 
-/* ---------------- মেমো যাচাই ---------------- */
+/* ---------------- Memo review ---------------- */
 ACT['memo-review'] = async el => {
   const list = await call('memos.list', { month: S.month || thisMonth() }, { silent: true });
   const m = list.filter(x => x.id === el.dataset.id)[0];
   if (!m) return;
   const src = m.hasImage ? await call('image.get', { kind: 'memo', id: m.id }) : '';
-  openModal('মেমো যাচাই — ' + m.name, \`<form class="stack">
-      \${src ? \`<img class="memo" src="\${src}" alt="মেমো">\` : ''}
-      <p class="small muted" style="margin:0">\${fmtDate(m.date)} · সদস্যের দেওয়া: \${tk(m.amount)}\${m.note ? ' · ' + esc(m.note) : ''}</p>
+  openModal('Review memo — ' + m.name, \`<form class="stack">
+      \${src ? \`<img class="memo" src="\${src}" alt="Memo">\` : ''}
+      <p class="small muted" style="margin:0">\${fmtDate(m.date)} · entered: \${tk(m.amount)}\${m.note ? ' · ' + esc(m.note) : ''}</p>
       <div class="grid2">
-        <label>অনুমোদিত টাকা<input type="number" name="amount" step="0.01" value="\${m.amount}" required></label>
-        <label>ধরন<select name="type"><option value="bazar">🛒 বাজার</option><option value="shared">🏠 সাধারণ</option></select></label>
+        <label>Approved amount<input type="number" name="amount" step="0.01" value="\${m.amount}" required></label>
+        <label>Type<select name="type"><option value="bazar">🛒 Bazar</option><option value="shared">🏠 Shared</option></select></label>
       </div>
-      <label>বিবরণ<input name="description" value="\${esc(m.note || 'বাজার')}"></label>
-      <label class="check"><input type="checkbox" name="paidByMember" checked> \${esc(m.name)} নিজের টাকায় বাজার করেছে (তার জমায় যোগ হবে)</label>
+      <label>Description<input name="description" value="\${esc(m.note || 'Bazar')}"></label>
+      <label class="check"><input type="checkbox" name="paidByMember" checked> \${esc(m.name)} paid with their own money (add to what they have paid)</label>
       <div class="row">
-        <button type="button" class="btn danger" data-act="memo-reject" data-id="\${m.id}">✕ বাতিল</button>
-        <button type="submit" class="btn primary">✓ অনুমোদন</button>
+        <button type="button" class="btn danger" data-act="memo-reject" data-id="\${m.id}">✕ Reject</button>
+        <button type="submit" class="btn primary">✓ Approve</button>
       </div></form>\`, async data => {
     data.id = m.id;
     data.action = 'approve';
     await call('memos.review', data);
-    toast('মেমো অনুমোদিত — খরচে যোগ হয়েছে', 'ok');
+    toast('Memo approved — added to expenses', 'ok');
     refresh();
   });
 };
@@ -2434,12 +2544,12 @@ ACT['memo-review'] = async el => {
 ACT['memo-reject'] = async el => {
   await call('memos.review', { id: el.dataset.id, action: 'reject' });
   closeModal();
-  toast('মেমো বাতিল করা হয়েছে');
+  toast('Memo rejected');
   refresh();
 };
 
-/* ---------------- ডিউটি ব্যবস্থাপনা ---------------- */
-ACT['duty-new'] = el => dutyForm(null);
+/* ---------------- Duty management ---------------- */
+ACT['duty-new'] = () => dutyForm(null);
 ACT['duty-edit'] = async el => {
   const list = await call('duties.list', { month: S.month || thisMonth() }, { silent: true });
   dutyForm(list.filter(t => t.id === el.dataset.id)[0]);
@@ -2448,38 +2558,38 @@ ACT['duty-edit'] = async el => {
 async function dutyForm(t) {
   const users = await getUsers();
   t = t || { type: 'bazar', date: todayStr(), status: 'pending' };
-  openModal(t.id ? 'ডিউটি সম্পাদনা' : 'নতুন ডিউটি', \`<form class="stack">
+  openModal(t.id ? 'Edit duty' : 'New duty', \`<form class="stack">
       <div class="grid2">
-        <label>ধরন<select name="type">
-          <option value="bazar" \${t.type === 'bazar' ? 'selected' : ''}>🛒 বাজার</option>
-          <option value="clean" \${t.type === 'clean' ? 'selected' : ''}>🚿 পরিষ্কার</option></select></label>
-        <label>তারিখ<input type="date" name="date" value="\${t.date}" required></label>
+        <label>Type<select name="type">
+          <option value="bazar" \${t.type === 'bazar' ? 'selected' : ''}>🛒 Bazar</option>
+          <option value="clean" \${t.type === 'clean' ? 'selected' : ''}>🚿 Cleaning</option></select></label>
+        <label>Date<input type="date" name="date" value="\${t.date}" required></label>
       </div>
-      <label>সদস্য<select name="userId" required>\${userOptions(users, t.userId, 'বেছে নিন')}</select></label>
+      <label>Member<select name="userId" required>\${userOptions(users, t.userId, 'Choose…')}</select></label>
       <div class="grid2">
-        <label>জায়গা (পরিষ্কারের জন্য)<input name="area" value="\${esc(t.area || '')}" placeholder="ওয়াশরুম"></label>
-        <label>অবস্থা<select name="status">
-          <option value="pending" \${t.status === 'pending' ? 'selected' : ''}>বাকি</option>
-          <option value="done" \${t.status === 'done' ? 'selected' : ''}>সম্পন্ন</option>
-          <option value="missed" \${t.status === 'missed' ? 'selected' : ''}>মিস</option></select></label>
+        <label>Area (for cleaning)<input name="area" value="\${esc(t.area || '')}" placeholder="Washroom"></label>
+        <label>Status<select name="status">
+          <option value="pending" \${t.status === 'pending' ? 'selected' : ''}>Pending</option>
+          <option value="done" \${t.status === 'done' ? 'selected' : ''}>Done</option>
+          <option value="missed" \${t.status === 'missed' ? 'selected' : ''}>Missed</option></select></label>
       </div>
-      <label>নোট<input name="note" value="\${esc(t.note || '')}"></label>
+      <label>Note<input name="note" value="\${esc(t.note || '')}"></label>
       <div class="row">
-        \${t.id ? '<button type="button" class="btn danger" data-act="duty-delete" data-id="' + t.id + '">মুছুন</button>' : ''}
-        <button class="btn primary" type="submit">সেভ</button>
+        \${t.id ? '<button type="button" class="btn danger" data-act="duty-delete" data-id="' + t.id + '">Delete</button>' : ''}
+        <button class="btn primary" type="submit">Save</button>
       </div></form>\`, async data => {
     data.id = t.id || '';
     await call('duties.save', data);
-    toast('ডিউটি সেভ হয়েছে', 'ok');
+    toast('Duty saved', 'ok');
     S.month = data.date.slice(0, 7);
     refresh();
   });
 }
 
 ACT['duty-delete'] = async el => {
-  if (!(await confirmBox('এই ডিউটিটি মুছে ফেলবেন?', 'মুছুন'))) return;
+  if (!(await confirmBox('Delete this duty?', 'Delete'))) return;
   await call('duties.delete', { id: el.dataset.id });
-  toast('ডিউটি মুছে ফেলা হয়েছে', 'ok');
+  toast('Duty deleted', 'ok');
   refresh();
 };
 
@@ -2487,46 +2597,46 @@ ACT['duty-generate'] = async () => {
   const users = (await getUsers()).filter(u => u.active === '1');
   const start = (S.month || thisMonth()) + '-01';
   const end = shiftMonth(S.month || thisMonth(), 1) + '-01';
-  openModal('পালাক্রমে রোস্টার তৈরি', \`<form class="stack">
+  openModal('Make a rotating roster', \`<form class="stack">
       <div class="grid2">
-        <label>ধরন<select name="type"><option value="bazar">🛒 বাজার</option><option value="clean">🚿 ওয়াশরুম পরিষ্কার</option></select></label>
-        <label>কত দিন পরপর<input type="number" name="every" min="1" max="31" value="1" required></label>
+        <label>Type<select name="type"><option value="bazar">🛒 Bazar</option><option value="clean">🚿 Washroom cleaning</option></select></label>
+        <label>Every how many days<input type="number" name="every" min="1" max="31" value="1" required></label>
       </div>
       <div class="grid2">
-        <label>শুরু<input type="date" name="from" value="\${start}" required></label>
-        <label>শেষ<input type="date" name="to" value="\${addDays(end, -1)}" required></label>
+        <label>From<input type="date" name="from" value="\${start}" required></label>
+        <label>To<input type="date" name="to" value="\${addDays(end, -1)}" required></label>
       </div>
-      <label>জায়গা (পরিষ্কারের জন্য)<input name="area" placeholder="ওয়াশরুম"></label>
-      <div><div class="small muted" style="margin-bottom:4px">সদস্য (এই ক্রমে পালা আসবে)</div>
+      <label>Area (for cleaning)<input name="area" placeholder="Washroom"></label>
+      <div><div class="small muted" style="margin-bottom:4px">Members (turns go in this order)</div>
         \${users.map(u => \`<label class="check"><input type="checkbox" name="userIds[]" value="\${esc(u.id)}" checked> \${esc(u.name)}</label>\`).join('')}</div>
-      <label class="check"><input type="checkbox" name="replace" checked> এই সময়ের আগের "বাকি" ডিউটি মুছে নতুন বানাও</label>
-      <button class="btn primary" type="submit">রোস্টার তৈরি করুন</button></form>\`, async (data, form) => {
+      <label class="check"><input type="checkbox" name="replace" checked> Replace pending duties of this type in these dates</label>
+      <button class="btn primary" type="submit">Make roster</button></form>\`, async (data, form) => {
     data.userIds = $$('input[name="userIds[]"]:checked', form).map(c => c.value);
     delete data['userIds[]'];
     const res = await call('duties.generate', data);
-    toast(bn(res.created) + 'টি ডিউটি তৈরি হয়েছে', 'ok');
+    toast(plural(res.created, 'duty') + ' created', 'ok');
     S.month = data.from.slice(0, 7);
     go('duty', { type: data.type });
   });
 };
 
-/* ---------------- সদস্য (অ্যাডমিন) ---------------- */
+/* ---------------- Members (admin) ---------------- */
 PAGES.users = {
-  title: 'সদস্য ও রোল', short: 'সদস্য', icon: '👥', roles: ADM,
+  title: 'Members & roles', short: 'Members', icon: '👥', roles: ADM,
   async render(v) {
     const users = await getUsers(true);
     v.innerHTML = \`
-      <div class="toolbar"><button class="btn primary" data-act="user-edit">+ নতুন সদস্য</button></div>
+      <div class="toolbar"><button class="btn primary" data-act="user-edit">+ Add member</button></div>
       <div class="card">
-        <p class="small muted" style="margin-top:0"><b>অ্যাডমিন</b> সব পারে ও রোল ঠিক করে · <b>ম্যানেজার</b> হিসাব, খরচ, জমা, ডিউটি দেখে ·
-          <b>সদস্য</b> নিজের মিল দেয়, মেমো আপলোড করে ও হিসাব দেখে।</p>
+        <p class="small muted" style="margin-top:0"><b>Admin</b> can do everything and sets roles · <b>Manager</b> handles meals, expenses, deposits and duties ·
+          <b>Member</b> sets own meals, uploads memos and sees the accounts.</p>
         <div class="list">\${users.map(u => \`<div class="item">
           <div class="grow">
             <div class="title">\${esc(u.name)} <span class="badge \${u.role === 'member' ? 'gray' : ''}">\${ROLE_LABEL[u.role]}</span>
-              \${u.active !== '1' ? '<span class="badge danger">বন্ধ</span>' : ''}</div>
-            <div class="sub">@\${esc(u.username)}\${u.room ? ' · রুম ' + esc(u.room) : ''}\${u.phone ? ' · ' + esc(u.phone) : ''}</div>
+              \${u.active !== '1' ? '<span class="badge danger">Inactive</span>' : ''}</div>
+            <div class="sub">@\${esc(u.username)}\${u.room ? ' · room ' + esc(u.room) : ''}\${u.phone ? ' · ' + esc(u.phone) : ''}</div>
           </div>
-          <button class="btn sm" data-act="user-edit" data-id="\${u.id}">✎ সম্পাদনা</button>
+          <button class="btn sm" data-act="user-edit" data-id="\${u.id}">✎ Edit</button>
         </div>\`).join('')}</div>
       </div>\`;
   }
@@ -2535,55 +2645,57 @@ PAGES.users = {
 ACT['user-edit'] = async el => {
   const u = (await getUsers()).filter(x => x.id === el.dataset.id)[0] || { role: 'member', active: '1' };
   const roleOpt = r => \`<option value="\${r}" \${u.role === r ? 'selected' : ''}>\${ROLE_LABEL[r]}</option>\`;
-  openModal(u.id ? 'সদস্য সম্পাদনা' : 'নতুন সদস্য', \`<form class="stack">
-      <label>নাম<input name="name" value="\${esc(u.name || '')}" required></label>
-      <label>ইউজারনেম (লগইনের জন্য)<input name="username" value="\${esc(u.username || '')}" required autocapitalize="none" placeholder="যেমন: rahim বা মোবাইল নম্বর"></label>
-      <label>\${u.id ? 'নতুন পাসওয়ার্ড (রিসেট করতে চাইলে)' : 'পাসওয়ার্ড'}<input name="password" type="text" minlength="6" \${u.id ? '' : 'required'} autocomplete="off"></label>
+  openModal(u.id ? 'Edit member' : 'Add member', \`<form class="stack">
+      <label>Name<input name="name" value="\${esc(u.name || '')}" required></label>
+      <label>Username (for login)<input name="username" value="\${esc(u.username || '')}" required autocapitalize="none" placeholder="e.g. rahim or a mobile number"></label>
+      <label>\${u.id ? 'New password (only to reset it)' : 'Password'}<input name="password" type="text" minlength="4" \${u.id ? '' : 'required'} autocomplete="off"></label>
       <div class="grid2">
-        <label>রোল<select name="role">\${roleOpt('member')}\${roleOpt('manager')}\${roleOpt('admin')}</select></label>
-        <label>অবস্থা<select name="active">
-          <option value="1" \${u.active === '1' ? 'selected' : ''}>সক্রিয়</option>
-          <option value="0" \${u.active !== '1' ? 'selected' : ''}>বন্ধ (মেস ছেড়েছে)</option></select></label>
+        <label>Role<select name="role">\${roleOpt('member')}\${roleOpt('manager')}\${roleOpt('admin')}</select></label>
+        <label>Status<select name="active">
+          <option value="1" \${u.active === '1' ? 'selected' : ''}>Active</option>
+          <option value="0" \${u.active !== '1' ? 'selected' : ''}>Inactive (left the mess)</option></select></label>
       </div>
       <div class="grid2">
-        <label>রুম<input name="room" value="\${esc(u.room || '')}"></label>
-        <label>ফোন<input name="phone" type="tel" value="\${esc(u.phone || '')}"></label>
+        <label>Room<input name="room" value="\${esc(u.room || '')}"></label>
+        <label>Phone<input name="phone" type="tel" value="\${esc(u.phone || '')}"></label>
       </div>
-      <button class="btn primary" type="submit">সেভ</button></form>\`, async data => {
+      <button class="btn primary" type="submit">Save</button></form>\`, async data => {
     data.id = u.id || '';
     S.users = await call('users.save', data);
-    toast('সদস্য সেভ হয়েছে' + (data.password ? ' — পাসওয়ার্ডটি সদস্যকে জানিয়ে দিন' : ''), 'ok');
-    refresh();
+    toast('Member saved', 'ok');
+    await refresh();
+    // New member or password reset: offer to send the login details (true = keep that dialog open)
+    if (data.password) { shareLogin(data.name, String(data.username).trim().toLowerCase(), data.password); return true; }
   });
 };
 
-/* ---------------- সেটিংস (অ্যাডমিন) ---------------- */
+/* ---------------- Settings (admin) ---------------- */
 PAGES.settings = {
-  title: 'সেটিংস', icon: '⚙️', roles: ADM,
+  title: 'Settings', icon: '⚙️', roles: ADM,
   async render(v) {
     const me = await call('me.get');
     const s = me.settings;
     v.innerHTML = \`
       <div class="card">
         <form id="setForm" class="stack">
-          <label>মেসের নাম<input name="messName" value="\${esc(s.messName)}" required></label>
+          <label>Mess name<input name="messName" value="\${esc(s.messName)}" required></label>
           <div class="grid2">
-            <label>দুপুরের মিল বন্ধের শেষ সময়<input type="time" name="lunchCutoff" value="\${esc(s.lunchCutoff)}" required></label>
-            <label>রাতের মিল বন্ধের শেষ সময়<input type="time" name="dinnerCutoff" value="\${esc(s.dinnerCutoff)}" required></label>
+            <label>Lunch changes close at<input type="time" name="lunchCutoff" value="\${esc(s.lunchCutoff)}" required></label>
+            <label>Dinner changes close at<input type="time" name="dinnerCutoff" value="\${esc(s.dinnerCutoff)}" required></label>
           </div>
-          <label>এক বেলায় সর্বোচ্চ মিল (গেস্টসহ)<input type="number" name="maxGuestMeal" min="1" max="20" value="\${esc(s.maxGuestMeal)}"></label>
-          <button class="btn primary" type="submit">সেভ করুন</button>
+          <label>Max meals per slot (with guests)<input type="number" name="maxGuestMeal" min="1" max="20" value="\${esc(s.maxGuestMeal)}"></label>
+          <button class="btn primary" type="submit">Save</button>
         </form>
       </div>
-      <div class="card small muted">সব তথ্য আপনার Google Sheet-এ জমা থাকে (Users, Meals, Expenses, Deposits, Duties, Memos, Settings ট্যাব)।
-        মেমোর ছবি Google Drive-এর "Mess Memo Images" ফোল্ডারে থাকে। শিটের হেডার বা কলামের ক্রম বদলাবেন না।</div>\`;
+      <div class="card small muted">All data is stored in your Google Sheet (tabs Users, Meals, Expenses, Deposits, Duties, Memos, Settings).
+        Memo photos are in the "Mess Memo Images" folder in Google Drive. Do not change the sheet headers or column order.</div>\`;
     $('#setForm').onsubmit = async e => {
       e.preventDefault();
       const res = await call('settings.save', formData(e.target)).catch(() => null);
       if (!res) return;
       S.settings = res;
-      $('#messName').textContent = res.messName;
-      toast('সেটিংস সেভ হয়েছে', 'ok');
+      $('#messName').textContent = document.title = res.messName;
+      toast('Settings saved', 'ok');
     };
   }
 };

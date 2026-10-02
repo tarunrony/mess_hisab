@@ -1,11 +1,11 @@
 /**
- * মাসিক হিসাব ও ড্যাশবোর্ড।
+ * Monthly accounts and the home dashboard.
  *
- *   মিল রেট        = মোট বাজার খরচ ÷ মোট মিল
- *   মিল খরচ        = নিজের মিল × মিল রেট
- *   সাধারণ খরচ ভাগ = মোট সাধারণ খরচ ÷ সদস্য সংখ্যা
- *   মোট জমা        = টাকা জমা + নিজের টাকায় করা বাজার
- *   ব্যালেন্স       = মোট জমা − (মিল খরচ + সাধারণ খরচ ভাগ)   (+ হলে ফেরত পাবে, − হলে দিতে হবে)
+ *   Meal rate    = total bazar cost ÷ total meals
+ *   Meal cost    = own meals × meal rate
+ *   Shared share = total shared cost ÷ number of members
+ *   Credit       = cash deposits + bazar paid from own pocket
+ *   Balance      = credit − (meal cost + shared share)   (+ gets money back, − must pay)
  */
 
 function computeReport_(month, withMatrix) {
@@ -20,7 +20,7 @@ function computeReport_(month, withMatrix) {
   };
   users.forEach(function (u) { if (u.active === '1') ensure(u.id); });
 
-  // দিনভিত্তিক মোট মিল
+  // Meal totals per day
   const daysInMonth = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
   const dayMap = {};
   for (let i = 1; i <= daysInMonth; i++) {
@@ -98,7 +98,6 @@ function dashboard_(d, me) {
     { meals: 0, lunch: 0, dinner: 0, mealCost: 0, sharedCost: 0, totalCost: 0, credit: 0, balance: 0 };
 
   const todayMeals = mealsDay_({ date: today });
-  const myToday = todayMeals.rows.filter(function (r) { return r.userId === me.id; })[0] || { lunch: 0, dinner: 0 };
   const tomorrow = mealsDay_({ date: addDays_(today, 1) });
 
   const names = nameMap_();
@@ -125,9 +124,10 @@ function dashboard_(d, me) {
       totalShared: report.totalShared, totalDeposit: report.totalDeposit, cashInHand: report.cashInHand
     },
     mine: mine,
+    // Today and tomorrow, for the one-tap meal switches on the home page
+    myMeals: mealsMy_({ from: today, to: addDays_(today, 1) }, me),
     todayMeals: { lunch: todayMeals.totalLunch, dinner: todayMeals.totalDinner },
     tomorrowMeals: { lunch: tomorrow.totalLunch, dinner: tomorrow.totalDinner },
-    myToday: { lunch: myToday.lunch, dinner: myToday.dinner },
     duties: duties,
     pendingMemos: pendingMemos
   };

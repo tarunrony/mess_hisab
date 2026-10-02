@@ -1,23 +1,24 @@
 <script>
 /* =========================================================
-   সবার জন্য পেজ: হোম, আমার মিল, মেমো, ডিউটি, রিপোর্ট, প্রোফাইল
+   Pages for everyone: Home, My meals, Memos, Duties, Report, Profile
    ========================================================= */
 
-const DUTY_LABEL = { bazar: 'বাজার', clean: 'পরিষ্কার' };
+const DUTY_LABEL = { bazar: 'Bazar', clean: 'Cleaning' };
 const DUTY_ICON = { bazar: '🛒', clean: '🚿' };
-const DUTY_STATUS = { pending: ['বাকি', 'warn'], done: ['সম্পন্ন', 'ok'], missed: ['মিস', 'danger'] };
-const MEMO_STATUS = { pending: ['অপেক্ষমাণ', 'warn'], approved: ['অনুমোদিত', 'ok'], rejected: ['বাতিল', 'danger'] };
+const DUTY_STATUS = { pending: ['Pending', 'warn'], done: ['Done', 'ok'], missed: ['Missed', 'danger'] };
+const MEMO_STATUS = { pending: ['Pending', 'warn'], approved: ['Approved', 'ok'], rejected: ['Rejected', 'danger'] };
 const badge = (map, key) => `<span class="badge ${(map[key] || [])[1] || 'gray'}">${(map[key] || [key])[0]}</span>`;
+const SLOT = { lunch: '☀️ Lunch', dinner: '🌙 Dinner' };
 
 function dutyItem(t) {
   const mine = S.user && t.userId === S.user.id;
   const actions = [];
-  if (t.status === 'pending' && (mine || isMgr())) actions.push(`<button class="btn sm ok" data-act="duty-done" data-id="${t.id}">✓ সম্পন্ন</button>`);
+  if (t.status === 'pending' && (mine || isMgr())) actions.push(`<button class="btn sm ok" data-act="duty-done" data-id="${t.id}">✓ Done</button>`);
   if (isMgr() && S.page === 'duty') actions.push(`<button class="btn sm" data-act="duty-edit" data-id="${t.id}">✎</button>`);
   return `<div class="item">
     <div class="duty-ico ${t.type}">${DUTY_ICON[t.type]}</div>
     <div class="grow">
-      <div class="title">${esc(t.name)}${mine ? ' <span class="badge">আমি</span>' : ''}</div>
+      <div class="title">${esc(t.name)}${mine ? ' <span class="badge">Me</span>' : ''}</div>
       <div class="sub">${fmtDate(t.date)} · ${DUTY_LABEL[t.type]}${t.area ? ' (' + esc(t.area) + ')' : ''}${t.note ? ' · ' + esc(t.note) : ''}</div>
     </div>
     ${badge(DUTY_STATUS, t.status)} ${actions.join(' ')}
@@ -26,63 +27,93 @@ function dutyItem(t) {
 
 ACT['duty-done'] = async el => {
   await call('duties.status', { id: el.dataset.id, status: 'done' });
-  toast('ডিউটি সম্পন্ন হিসেবে চিহ্নিত হয়েছে', 'ok');
+  toast('Duty marked as done', 'ok');
   refresh();
 };
 
-/* ---------------- হোম ---------------- */
+/* ---------------- Home ---------------- */
+function quickMeals() {
+  const st = S.quick;
+  return st.days.map((d, i) => `
+    <div class="day">${i === 0 ? 'Today' : 'Tomorrow'}<div class="small muted">${fmtDate(d.date, { day: 'numeric', month: 'short' })}</div></div>
+    ${['lunch', 'dinner'].map(slot => {
+      const v = d[slot], locked = slot === 'lunch' ? d.lockLunch : d.lockDinner;
+      const label = v > 1 ? `ON · ${v}` : v ? 'ON' : 'OFF';
+      return `<button class="qbtn ${v ? 'on' : ''} ${locked ? 'locked' : ''}" data-act="quick-meal" data-i="${i}" data-slot="${slot}" ${locked ? 'disabled' : ''}>
+        <span>${SLOT[slot]}</span><small>${locked ? '🔒 ' : ''}${label}</small></button>`;
+    }).join('')}`).join('');
+}
+
 PAGES.home = {
-  title: 'হোম', icon: '🏠', roles: ALL,
+  title: 'Home', icon: '🏠', roles: ALL,
   async render(v) {
     const d = await call('dashboard');
     S.pendingMemos = d.pendingMemos;
+    S.quick = d.myMeals;
     renderNav();
     const m = d.mine;
     v.innerHTML = `
+      <div class="card">
+        <div class="card-head"><h3>My meals</h3>
+          <button class="btn sm" data-act="go" data-page="mymeal">More days</button></div>
+        <div class="quick" id="quickBox">${quickMeals()}</div>
+        <p class="small muted" style="margin:10px 0 0">Tap to switch on/off. Today's lunch closes at ${esc(S.quick.lunchCutoff)}, dinner at ${esc(S.quick.dinnerCutoff)}.</p>
+      </div>
+
       <div class="stats">
-        <div class="stat hl"><div class="lbl">এই মাসের মিল রেট</div><div class="val">${tk(d.month.mealRate)}</div></div>
-        <div class="stat"><div class="lbl">আমার মিল (এই মাস)</div><div class="val">${bn(m.meals)}</div></div>
-        <div class="stat"><div class="lbl">আমার খরচ</div><div class="val">${tk(m.totalCost)}</div></div>
-        <div class="stat"><div class="lbl">আমার ব্যালেন্স</div><div class="val ${balClass(m.balance)}">${signed(m.balance)}</div></div>
+        <div class="stat hl"><div class="lbl">Meal rate (this month)</div><div class="val">${tk(d.month.mealRate)}</div></div>
+        <div class="stat"><div class="lbl">My meals</div><div class="val">${num(m.meals)}</div></div>
+        <div class="stat"><div class="lbl">My cost</div><div class="val">${tk(m.totalCost)}</div></div>
+        <div class="stat"><div class="lbl">My balance</div><div class="val ${balClass(m.balance)}">${signed(m.balance)}</div></div>
       </div>
 
       <div class="card">
-        <div class="card-head"><h3>আজকের মিল · ${fmtDate(d.today)}</h3>
-          <button class="btn sm" data-act="go" data-page="${isMgr() ? 'daymeal' : 'mymeal'}">পরিবর্তন</button></div>
+        <div class="card-head"><h3>Mess meals today · ${fmtDate(d.today)}</h3>
+          ${isMgr() ? '<button class="btn sm" data-act="go" data-page="daymeal">Edit</button>' : ''}</div>
         <div class="grid2">
-          <div class="stat"><div class="lbl">☀️ দুপুর — মোট</div><div class="val">${bn(d.todayMeals.lunch)}</div><div class="small muted">আমার: ${bn(d.myToday.lunch)}</div></div>
-          <div class="stat"><div class="lbl">🌙 রাত — মোট</div><div class="val">${bn(d.todayMeals.dinner)}</div><div class="small muted">আমার: ${bn(d.myToday.dinner)}</div></div>
+          <div class="stat"><div class="lbl">☀️ Lunch</div><div class="val">${num(d.todayMeals.lunch)}</div></div>
+          <div class="stat"><div class="lbl">🌙 Dinner</div><div class="val">${num(d.todayMeals.dinner)}</div></div>
         </div>
-        <p class="small muted" style="margin:10px 0 0">আগামীকাল: দুপুর ${bn(d.tomorrowMeals.lunch)} · রাত ${bn(d.tomorrowMeals.dinner)} জন</p>
+        <p class="small muted" style="margin:10px 0 0">Tomorrow: lunch ${num(d.tomorrowMeals.lunch)} · dinner ${num(d.tomorrowMeals.dinner)}</p>
       </div>
 
-      ${d.pendingMemos && isMgr() ? `<div class="card note row"><span>📄 ${bn(d.pendingMemos)}টি বাজারের মেমো যাচাইয়ের অপেক্ষায়</span>
-        <button class="btn sm primary" style="flex:none" data-act="go" data-page="memo">দেখুন</button></div>` : ''}
+      ${d.pendingMemos && isMgr() ? `<div class="card note row"><span>📄 ${plural(d.pendingMemos, 'bazar memo')} waiting for review</span>
+        <button class="btn sm primary" style="flex:none" data-act="go" data-page="memo">Review</button></div>` : ''}
 
       <div class="card">
-        <div class="card-head"><h3>সামনের ৭ দিনের ডিউটি</h3><button class="btn sm" data-act="go" data-page="duty">সব দেখুন</button></div>
-        <div class="list">${d.duties.length ? d.duties.map(dutyItem).join('') : '<div class="empty">কোনো ডিউটি নেই</div>'}</div>
+        <div class="card-head"><h3>Duties — next 7 days</h3><button class="btn sm" data-act="go" data-page="duty">See all</button></div>
+        <div class="list">${d.duties.length ? d.duties.map(dutyItem).join('') : '<div class="empty">No duties</div>'}</div>
       </div>
 
       <div class="card">
-        <h3>এই মাসের মেস হিসাব</h3>
+        <h3>This month at a glance</h3>
         <div class="list">
-          <div class="item"><span class="grow">মোট মিল</span><span class="amount">${bn(d.month.totalMeals)}</span></div>
-          <div class="item"><span class="grow">মোট বাজার</span><span class="amount">${tk(d.month.totalBazar)}</span></div>
-          <div class="item"><span class="grow">সাধারণ খরচ</span><span class="amount">${tk(d.month.totalShared)}</span></div>
-          <div class="item"><span class="grow">মোট টাকা জমা</span><span class="amount">${tk(d.month.totalDeposit)}</span></div>
-          <div class="item"><span class="grow">ম্যানেজারের হাতে আছে</span><span class="amount ${balClass(d.month.cashInHand)}">${tk(d.month.cashInHand)}</span></div>
+          <div class="item"><span class="grow">Total meals</span><span class="amount">${num(d.month.totalMeals)}</span></div>
+          <div class="item"><span class="grow">Total bazar</span><span class="amount">${tk(d.month.totalBazar)}</span></div>
+          <div class="item"><span class="grow">Shared costs</span><span class="amount">${tk(d.month.totalShared)}</span></div>
+          <div class="item"><span class="grow">Total deposits</span><span class="amount">${tk(d.month.totalDeposit)}</span></div>
+          <div class="item"><span class="grow">Cash with manager</span><span class="amount ${balClass(d.month.cashInHand)}">${tk(d.month.cashInHand)}</span></div>
         </div>
       </div>`;
   }
 };
 
-/* ---------------- আমার মিল ---------------- */
+ACT['quick-meal'] = async el => {
+  const day = S.quick.days[Number(el.dataset.i)];
+  const slot = el.dataset.slot;
+  const payload = { date: day.date };
+  payload[slot] = day[slot] ? 0 : 1;
+  Object.assign(day, await call('meals.setMy', payload));
+  $('#quickBox').innerHTML = quickMeals();
+  toast(`${fmtDate(day.date)} — ${slot} ${day[slot] ? 'ON' : 'OFF'}`, 'ok');
+};
+
+/* ---------------- My meals ---------------- */
 function stepper(act, date, slot, val, locked, max) {
-  return `<div class="slot">${slot === 'lunch' ? '☀️ দুপুর' : '🌙 রাত'}
+  return `<div class="slot">${SLOT[slot]}
     <div class="stepper ${val > 0 ? 'on' : ''} ${locked ? 'locked' : ''}">
       <button data-act="${act}" data-date="${date}" data-slot="${slot}" data-n="-1" ${locked || val <= 0 ? 'disabled' : ''}>−</button>
-      <span class="v">${locked ? '🔒' : ''}${bn(val)}</span>
+      <span class="v">${locked ? '🔒' : ''}${num(val)}</span>
       <button data-act="${act}" data-date="${date}" data-slot="${slot}" data-n="1" ${locked || val >= max ? 'disabled' : ''}>+</button>
     </div></div>`;
 }
@@ -91,45 +122,47 @@ function myMealRows() {
   const st = S.myMeals;
   return st.days.map(d => `<div class="meal-day ${d.date === st.today ? 'today' : ''}">
       <div class="d"><strong>${fmtDate(d.date)}</strong>
-        <span class="small muted">${d.date === st.today ? 'আজ' : d.date === addDays(st.today, 1) ? 'আগামীকাল' : ''}
-        ${d.isDefault ? '<span class="badge gray">ডিফল্ট</span>' : ''}</span></div>
+        <span class="small muted">${d.date === st.today ? 'Today' : d.date === addDays(st.today, 1) ? 'Tomorrow' : ''}
+        ${d.isDefault ? '<span class="badge gray">Default</span>' : ''}</span></div>
       ${stepper('meal-step', d.date, 'lunch', d.lunch, d.lockLunch, st.maxGuestMeal)}
       ${stepper('meal-step', d.date, 'dinner', d.dinner, d.lockDinner, st.maxGuestMeal)}
     </div>`).join('');
 }
 
 PAGES.mymeal = {
-  title: 'আমার মিল', short: 'আমার মিল', icon: '🍽️', roles: ALL,
+  title: 'My meals', short: 'My meals', icon: '🍽️', roles: ALL,
   async render(v, p) {
     const from = p.from || todayStr();
     S.myMeals = await call('meals.my', { from: from, to: addDays(from, 6) });
     const st = S.myMeals;
     v.innerHTML = `
       <div class="card">
-        <div class="card-head"><h3>কবে কবে মিল খাবেন</h3>
-          <button class="btn sm primary" data-act="meal-range">একসাথে অনেক দিন</button></div>
-        <p class="small muted" style="margin-top:0">আজকের দুপুরের মিল <b>${esc(st.lunchCutoff)}</b> এবং রাতের মিল <b>${esc(st.dinnerCutoff)}</b>
-          এর আগে পরিবর্তন করা যাবে। গেস্ট থাকলে + চেপে সংখ্যা বাড়ান।</p>
+        <div class="card-head"><h3>Which meals will you eat?</h3>
+          <button class="btn sm primary" data-act="meal-range">Many days at once</button></div>
+        <p class="small muted" style="margin-top:0">Today's lunch can be changed until <b>${esc(st.lunchCutoff)}</b> and dinner until
+          <b>${esc(st.dinnerCutoff)}</b>. Have a guest? Press + to add a meal.</p>
         <div class="switcher">
-          <button class="btn sm" data-act="meal-week" data-n="-7">‹ আগের</button>
+          <button class="btn sm" data-act="meal-week" data-n="-7">‹ Prev</button>
           <strong>${fmtDate(st.days[0].date, { day: 'numeric', month: 'short' })} – ${fmtDate(st.days[6].date, { day: 'numeric', month: 'short' })}</strong>
-          <button class="btn sm" data-act="meal-week" data-n="7">পরের ›</button>
+          <button class="btn sm" data-act="meal-week" data-n="7">Next ›</button>
         </div>
         <div id="myMealList">${myMealRows()}</div>
       </div>
       <div class="card">
-        <h3>ডিফল্ট মিল</h3>
-        <p class="small muted" style="margin-top:0">চালু থাকলে প্রতিদিন আপনাআপনি মিল বসে যাবে, শুধু যেদিন খাবেন না সেদিন বন্ধ করবেন।</p>
+        <h3>Default meals</h3>
+        <p class="small muted" style="margin-top:0">When on, your meal is added automatically every day — you only switch it off on days you won't eat.</p>
         <form id="prefsForm" class="row">
-          <label class="check"><input type="checkbox" name="autoLunch" ${st.autoLunch === '1' ? 'checked' : ''}> ☀️ দুপুর</label>
-          <label class="check"><input type="checkbox" name="autoDinner" ${st.autoDinner === '1' ? 'checked' : ''}> 🌙 রাত</label>
-          <button class="btn" type="submit" style="flex:none">সেভ</button>
+          <label class="check"><input type="checkbox" name="autoLunch" ${st.autoLunch === '1' ? 'checked' : ''}> ☀️ Lunch</label>
+          <label class="check"><input type="checkbox" name="autoDinner" ${st.autoDinner === '1' ? 'checked' : ''}> 🌙 Dinner</label>
+          <button class="btn" type="submit" style="flex:none">Save</button>
         </form>
       </div>`;
     $('#prefsForm').onsubmit = async e => {
       e.preventDefault();
-      S.user = await call('me.prefs', formData(e.target));
-      toast('ডিফল্ট মিল সেভ হয়েছে', 'ok');
+      const user = await call('me.prefs', formData(e.target)).catch(() => null);
+      if (!user) return;
+      S.user = user;
+      toast('Default meals saved', 'ok');
       refresh();
     };
   }
@@ -147,51 +180,50 @@ ACT['meal-step'] = async el => {
   const next = Math.max(0, Math.min(st.maxGuestMeal, day[slot] + Number(el.dataset.n)));
   const payload = { date: day.date };
   payload[slot] = next;
-  const res = await call('meals.setMy', payload);
-  Object.assign(day, res);
+  Object.assign(day, await call('meals.setMy', payload));
   $('#myMealList').innerHTML = myMealRows();
-  toast(`${fmtDate(day.date)} — ${slot === 'lunch' ? 'দুপুর' : 'রাত'}: ${bn(next)} মিল`, 'ok');
+  toast(`${fmtDate(day.date)} — ${slot}: ${plural(next, 'meal')}`, 'ok');
 };
 
 ACT['meal-range'] = () => {
-  const opts = `<option value="">অপরিবর্তিত</option><option value="1">চালু (১টি)</option><option value="0">বন্ধ</option>`;
-  openModal('একসাথে অনেক দিনের মিল', `<form class="stack">
+  const opts = `<option value="">No change</option><option value="1">On (1 meal)</option><option value="0">Off</option>`;
+  openModal('Meals for many days', `<form class="stack">
       <div class="grid2">
-        <label>শুরু<input type="date" name="from" value="${todayStr()}" required></label>
-        <label>শেষ<input type="date" name="to" value="${addDays(todayStr(), 4)}" required></label>
+        <label>From<input type="date" name="from" value="${todayStr()}" required></label>
+        <label>To<input type="date" name="to" value="${addDays(todayStr(), 4)}" required></label>
       </div>
       <div class="grid2">
-        <label>☀️ দুপুর<select name="lunch">${opts}</select></label>
-        <label>🌙 রাত<select name="dinner">${opts}</select></label>
+        <label>☀️ Lunch<select name="lunch">${opts}</select></label>
+        <label>🌙 Dinner<select name="dinner">${opts}</select></label>
       </div>
-      <p class="small muted">যেমন: বাড়ি যাচ্ছেন — দুই বেলাই "বন্ধ" দিন। সময় পেরিয়ে যাওয়া বেলা বদলাবে না।</p>
-      <button class="btn primary" type="submit">সেভ করুন</button></form>`, async data => {
+      <p class="small muted">Example: going home — set both to "Off". Meals whose time has passed won't change.</p>
+      <button class="btn primary" type="submit">Save</button></form>`, async data => {
     const res = await call('meals.setMyRange', data);
-    toast(`${bn(res.changed)} দিনের মিল আপডেট হয়েছে` + (res.skipped ? ` (${bn(res.skipped)}টি বেলার সময় শেষ)` : ''), 'ok');
+    toast(`${plural(res.changed, 'day')} updated` + (res.skipped ? ` (${plural(res.skipped, 'meal')} already closed)` : ''), 'ok');
     refresh();
   });
 };
 
-/* ---------------- মেমো ---------------- */
+/* ---------------- Memos ---------------- */
 PAGES.memo = {
-  title: 'বাজারের মেমো', short: 'মেমো', icon: '🧾', roles: ALL,
+  title: 'Bazar memos', short: 'Memos', icon: '🧾', roles: ALL,
   async render(v, p) {
     const status = p.status === undefined ? (isMgr() ? 'pending' : '') : p.status;
     const list = await call('memos.list', { month: S.month || thisMonth(), status: status });
     const total = list.reduce((s, m) => s + Number(m.amount), 0);
     v.innerHTML = `
       <div class="toolbar">
-        <button class="btn primary" data-act="memo-new">📷 মেমো আপলোড</button>
+        <button class="btn primary" data-act="memo-new">📷 Upload memo</button>
         ${isMgr() ? `<select data-chg="memo-filter" style="flex:1">
-          <option value="pending" ${status === 'pending' ? 'selected' : ''}>অপেক্ষমাণ</option>
-          <option value="" ${status === '' ? 'selected' : ''}>সব মেমো</option>
-          <option value="approved" ${status === 'approved' ? 'selected' : ''}>অনুমোদিত</option>
-          <option value="rejected" ${status === 'rejected' ? 'selected' : ''}>বাতিল</option></select>` : ''}
+          <option value="pending" ${status === 'pending' ? 'selected' : ''}>Pending</option>
+          <option value="" ${status === '' ? 'selected' : ''}>All memos</option>
+          <option value="approved" ${status === 'approved' ? 'selected' : ''}>Approved</option>
+          <option value="rejected" ${status === 'rejected' ? 'selected' : ''}>Rejected</option></select>` : ''}
       </div>
       ${monthNav()}
       <div class="card">
-        <div class="card-head"><h3>${bn(list.length)}টি মেমো</h3><span class="amount">${tk(total)}</span></div>
-        <div class="list">${list.length ? list.map(memoItem).join('') : '<div class="empty">এই মাসে কোনো মেমো নেই</div>'}</div>
+        <div class="card-head"><h3>${plural(list.length, 'memo')}</h3><span class="amount">${tk(total)}</span></div>
+        <div class="list">${list.length ? list.map(memoItem).join('') : '<div class="empty">No memos this month</div>'}</div>
       </div>`;
   }
 };
@@ -199,77 +231,77 @@ PAGES.memo = {
 function memoItem(m) {
   const mine = m.userId === S.user.id;
   const btns = [];
-  if (m.hasImage) btns.push(`<button class="btn sm" data-act="show-image" data-kind="memo" data-id="${m.id}">🖼️ ছবি</button>`);
-  if (isMgr() && m.status === 'pending') btns.push(`<button class="btn sm primary" data-act="memo-review" data-id="${m.id}">যাচাই</button>`);
-  if (m.status !== 'approved' && (isMgr() || (mine && m.status === 'pending'))) btns.push(`<button class="btn sm danger" data-act="memo-delete" data-id="${m.id}">মুছুন</button>`);
+  if (m.hasImage) btns.push(`<button class="btn sm" data-act="show-image" data-kind="memo" data-id="${m.id}">🖼️ Photo</button>`);
+  if (isMgr() && m.status === 'pending') btns.push(`<button class="btn sm primary" data-act="memo-review" data-id="${m.id}">Review</button>`);
+  if (m.status !== 'approved' && (isMgr() || (mine && m.status === 'pending'))) btns.push(`<button class="btn sm danger" data-act="memo-delete" data-id="${m.id}">Delete</button>`);
   return `<div class="item" style="flex-wrap:wrap">
     <div class="grow">
       <div class="title">${esc(m.name)} · ${tk(m.amount)}</div>
-      <div class="sub">${fmtDate(m.date)}${m.note ? ' · ' + esc(m.note) : ''}${m.reviewedByName ? ' · যাচাই: ' + esc(m.reviewedByName) : ''}</div>
+      <div class="sub">${fmtDate(m.date)}${m.note ? ' · ' + esc(m.note) : ''}${m.reviewedByName ? ' · reviewed by ' + esc(m.reviewedByName) : ''}</div>
     </div>
     ${badge(MEMO_STATUS, m.status)}
-    <div class="row" style="flex-basis:100%;justify-content:flex-end;flex:0 0 100%">${btns.map(b => `<span style="flex:none">${b}</span>`).join('')}</div>
+    <div class="row" style="flex:0 0 100%;justify-content:flex-end">${btns.map(b => `<span style="flex:none">${b}</span>`).join('')}</div>
   </div>`;
 }
 
 CHG['memo-filter'] = el => go('memo', { status: el.value });
 
 ACT['memo-new'] = () => {
-  openModal('বাজারের মেমো আপলোড', `<form class="stack">
-      <label>বাজারের তারিখ<input type="date" name="date" value="${todayStr()}" required></label>
-      <label>মোট টাকা<input type="number" name="amount" min="1" step="0.01" inputmode="decimal" required></label>
-      <label>কী কী কিনেছেন (ঐচ্ছিক)<textarea name="note" placeholder="চাল, ডাল, মাছ..."></textarea></label>
-      <label>মেমোর ছবি<input type="file" accept="image/*" data-chg="preview" data-target="memoPrev" required></label>
+  openModal('Upload bazar memo', `<form class="stack">
+      <label>Bazar date<input type="date" name="date" value="${todayStr()}" required></label>
+      <label>Total amount<input type="number" name="amount" min="1" step="0.01" inputmode="decimal" required></label>
+      <label>What did you buy? (optional)<textarea name="note" placeholder="Rice, lentils, fish..."></textarea></label>
+      <label>Memo photo<input type="file" accept="image/*" data-chg="preview" data-target="memoPrev" required></label>
       <div id="memoPrev"></div>
-      <button class="btn primary" type="submit">আপলোড করুন</button></form>`, async (data, form) => {
+      <button class="btn primary" type="submit">Upload</button></form>`, async (data, form) => {
     data.image = await imageFromForm(form);
-    if (!data.image) { toast('মেমোর ছবি দিন', 'err'); return true; }
+    if (!data.image) { toast('Add a photo of the memo', 'err'); return true; }
     await call('memos.upload', data);
-    toast('মেমো আপলোড হয়েছে, ম্যানেজার যাচাই করবেন', 'ok');
+    toast('Memo uploaded — the manager will review it', 'ok');
     S.month = data.date.slice(0, 7);
     go('memo', { status: isMgr() ? 'pending' : '' });
   });
 };
 
 ACT['memo-delete'] = async el => {
-  if (!(await confirmBox('মেমোটি মুছে ফেলবেন?', 'মুছুন'))) return;
+  if (!(await confirmBox('Delete this memo?', 'Delete'))) return;
   await call('memos.delete', { id: el.dataset.id });
-  toast('মেমো মুছে ফেলা হয়েছে', 'ok');
+  toast('Memo deleted', 'ok');
   refresh();
 };
 
-/* ---------------- ডিউটি ---------------- */
+/* ---------------- Duties ---------------- */
 PAGES.duty = {
-  title: 'বাজার ও পরিষ্কারের ডিউটি', short: 'ডিউটি', icon: '🗓️', roles: ALL,
+  title: 'Bazar & cleaning duties', short: 'Duties', icon: '🗓️', roles: ALL,
   async render(v, p) {
     const type = p.type || '';
     const list = await call('duties.list', { month: S.month || thisMonth(), type: type });
     v.innerHTML = `
       ${isMgr() ? `<div class="toolbar">
-        <button class="btn primary" data-act="duty-new">+ ডিউটি</button>
-        <button class="btn" data-act="duty-generate">🔁 রোস্টার তৈরি</button></div>` : ''}
+        <button class="btn primary" data-act="duty-new">+ Duty</button>
+        <button class="btn" data-act="duty-generate">🔁 Make a roster</button></div>` : ''}
       ${monthNav()}
       <div class="toolbar">
         <select data-chg="duty-filter">
-          <option value="" ${type === '' ? 'selected' : ''}>সব ডিউটি</option>
-          <option value="bazar" ${type === 'bazar' ? 'selected' : ''}>🛒 বাজার</option>
-          <option value="clean" ${type === 'clean' ? 'selected' : ''}>🚿 ওয়াশরুম পরিষ্কার</option>
+          <option value="" ${type === '' ? 'selected' : ''}>All duties</option>
+          <option value="bazar" ${type === 'bazar' ? 'selected' : ''}>🛒 Bazar</option>
+          <option value="clean" ${type === 'clean' ? 'selected' : ''}>🚿 Washroom cleaning</option>
         </select>
       </div>
-      <div class="card"><div class="list">${list.length ? list.map(dutyItem).join('') : '<div class="empty">এই মাসে কোনো ডিউটি নেই</div>'}</div></div>`;
+      <div class="card"><div class="list">${list.length ? list.map(dutyItem).join('') : '<div class="empty">No duties this month</div>'}</div></div>`;
   }
 };
 CHG['duty-filter'] = el => go('duty', { type: el.value });
 
-/* ---------------- রিপোর্ট ---------------- */
+/* ---------------- Report ---------------- */
 PAGES.report = {
-  title: 'মাসিক রিপোর্ট', short: 'রিপোর্ট', icon: '📊', roles: ALL,
+  title: 'Monthly report', short: 'Report', icon: '📊', roles: ALL,
   async render(v, p) {
     const r = await call('report.month', { month: S.month || thisMonth(), matrix: !!p.matrix });
     const rows = r.members.map(m => `<tr ${m.userId === S.user.id ? 'style="background:var(--primary-soft)"' : ''}>
-        <td>${esc(m.name)}</td><td class="num">${bn(m.lunch)}+${bn(m.dinner)}=${bn(m.meals)}</td>
+        <td>${esc(m.name)}</td><td class="num">${num(m.lunch)}+${num(m.dinner)}=${num(m.meals)}</td>
         <td class="num">${tk(m.mealCost)}</td><td class="num">${tk(m.sharedCost)}</td><td class="num">${tk(m.totalCost)}</td>
-        <td class="num">${tk(m.credit)}${m.paidBazar ? `<div class="small muted">বাজার ${tk(m.paidBazar)}</div>` : ''}</td>
+        <td class="num">${tk(m.credit)}${m.paidBazar ? `<div class="small muted">bazar ${tk(m.paidBazar)}</div>` : ''}</td>
         <td class="num ${balClass(m.balance)}">${signed(m.balance)}</td></tr>`).join('');
     const sum = k => r.members.reduce((s, m) => s + Number(m[k]), 0);
     const days = r.days.filter(d => d.lunch || d.dinner);
@@ -277,77 +309,77 @@ PAGES.report = {
     v.innerHTML = `
       ${monthNav()}
       <div class="stats">
-        <div class="stat hl"><div class="lbl">মিল রেট</div><div class="val">${tk(r.mealRate)}</div></div>
-        <div class="stat"><div class="lbl">মোট মিল</div><div class="val">${bn(r.totalMeals)}</div><div class="small muted">দুপুর ${bn(r.totalLunch)} · রাত ${bn(r.totalDinner)}</div></div>
-        <div class="stat"><div class="lbl">মোট বাজার</div><div class="val">${tk(r.totalBazar)}</div></div>
-        <div class="stat"><div class="lbl">সাধারণ খরচ</div><div class="val">${tk(r.totalShared)}</div><div class="small muted">জনপ্রতি ${tk(r.sharedEach)}</div></div>
-        <div class="stat"><div class="lbl">মোট জমা</div><div class="val">${tk(r.totalDeposit)}</div></div>
-        <div class="stat"><div class="lbl">ফান্ড থেকে খরচ</div><div class="val">${tk(r.fundSpent)}</div></div>
-        <div class="stat"><div class="lbl">হাতে আছে</div><div class="val ${balClass(r.cashInHand)}">${tk(r.cashInHand)}</div></div>
+        <div class="stat hl"><div class="lbl">Meal rate</div><div class="val">${tk(r.mealRate)}</div></div>
+        <div class="stat"><div class="lbl">Total meals</div><div class="val">${num(r.totalMeals)}</div><div class="small muted">lunch ${num(r.totalLunch)} · dinner ${num(r.totalDinner)}</div></div>
+        <div class="stat"><div class="lbl">Total bazar</div><div class="val">${tk(r.totalBazar)}</div></div>
+        <div class="stat"><div class="lbl">Shared costs</div><div class="val">${tk(r.totalShared)}</div><div class="small muted">${tk(r.sharedEach)} each</div></div>
+        <div class="stat"><div class="lbl">Total deposits</div><div class="val">${tk(r.totalDeposit)}</div></div>
+        <div class="stat"><div class="lbl">Spent from fund</div><div class="val">${tk(r.fundSpent)}</div></div>
+        <div class="stat"><div class="lbl">Cash with manager</div><div class="val ${balClass(r.cashInHand)}">${tk(r.cashInHand)}</div></div>
       </div>
 
       <div class="card">
-        <div class="card-head"><h3>সদস্যভিত্তিক হিসাব</h3><button class="btn sm" data-act="print">🖨️ প্রিন্ট</button></div>
+        <div class="card-head"><h3>Per member</h3><button class="btn sm" data-act="print">🖨️ Print</button></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>নাম</th><th class="num">মিল (দু+রা)</th><th class="num">মিল খরচ</th><th class="num">সাধারণ</th>
-            <th class="num">মোট খরচ</th><th class="num">জমা</th><th class="num">ব্যালেন্স</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="7" class="empty">কোনো তথ্য নেই</td></tr>'}</tbody>
-          <tfoot><tr><td>মোট</td><td class="num">${bn(r.totalMeals)}</td><td class="num">${tk(sum('mealCost'))}</td><td class="num">${tk(sum('sharedCost'))}</td>
+          <thead><tr><th>Name</th><th class="num">Meals (L+D)</th><th class="num">Meal cost</th><th class="num">Shared</th>
+            <th class="num">Total cost</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" class="empty">No data</td></tr>'}</tbody>
+          <tfoot><tr><td>Total</td><td class="num">${num(r.totalMeals)}</td><td class="num">${tk(sum('mealCost'))}</td><td class="num">${tk(sum('sharedCost'))}</td>
             <td class="num">${tk(sum('totalCost'))}</td><td class="num">${tk(sum('credit'))}</td><td class="num">${signed(sum('balance'))}</td></tr></tfoot>
         </table></div>
-        <p class="small muted">ব্যালেন্স + হলে মেস থেকে ফেরত পাবেন, − হলে মেসকে দিতে হবে। জমার মধ্যে নিজের টাকায় করা বাজারও ধরা আছে।</p>
+        <p class="small muted">Balance + means the member gets money back, − means they still have to pay. "Paid" includes bazar done with their own money.</p>
       </div>
 
       <div class="card">
-        <div class="card-head"><h3>দিনভিত্তিক মিল</h3>
-          <button class="btn sm" data-act="report-matrix">${p.matrix ? 'সারসংক্ষেপ' : '📋 পুরো মিল শিট'}</button></div>
+        <div class="card-head"><h3>Meals by day</h3>
+          <button class="btn sm" data-act="report-matrix">${p.matrix ? 'Summary' : '📋 Full meal sheet'}</button></div>
         ${p.matrix ? mealSheet(r) : `<div class="table-wrap"><table>
-          <thead><tr><th>তারিখ</th><th class="num">☀️ দুপুর</th><th class="num">🌙 রাত</th><th class="num">মোট</th></tr></thead>
-          <tbody>${days.map(d => `<tr><td>${fmtDate(d.date)}</td><td class="num">${bn(d.lunch)}</td><td class="num">${bn(d.dinner)}</td><td class="num">${bn(d.lunch + d.dinner)}</td></tr>`).join('') ||
-            '<tr><td colspan="4" class="empty">কোনো মিল নেই</td></tr>'}</tbody></table></div>`}
+          <thead><tr><th>Date</th><th class="num">☀️ Lunch</th><th class="num">🌙 Dinner</th><th class="num">Total</th></tr></thead>
+          <tbody>${days.map(d => `<tr><td>${fmtDate(d.date)}</td><td class="num">${num(d.lunch)}</td><td class="num">${num(d.dinner)}</td><td class="num">${num(d.lunch + d.dinner)}</td></tr>`).join('') ||
+            '<tr><td colspan="4" class="empty">No meals yet</td></tr>'}</tbody></table></div>`}
       </div>`;
   }
 };
 
 function mealSheet(r) {
-  const head = r.days.map(d => `<th>${bn(Number(d.date.slice(8)))}</th>`).join('');
+  const head = r.days.map(d => `<th>${Number(d.date.slice(8))}</th>`).join('');
   const body = r.members.map(m => {
     const row = (r.matrix || {})[m.userId] || {};
     return `<tr><td>${esc(m.name)}</td>${r.days.map(d => {
       const c = row[d.date];
-      return `<td>${c ? bn(c[0]) + '/' + bn(c[1]) : '<span class="muted">–</span>'}</td>`;
-    }).join('')}<td><b>${bn(m.meals)}</b></td></tr>`;
+      return `<td>${c ? c[0] + '/' + c[1] : '<span class="muted">–</span>'}</td>`;
+    }).join('')}<td><b>${num(m.meals)}</b></td></tr>`;
   }).join('');
-  return `<p class="small muted" style="margin-top:0">প্রতিটি ঘরে দুপুর/রাত</p>
-    <div class="table-wrap"><table class="sheet"><thead><tr><th>নাম</th>${head}<th>মোট</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  return `<p class="small muted" style="margin-top:0">Each cell is lunch/dinner</p>
+    <div class="table-wrap"><table class="sheet"><thead><tr><th>Name</th>${head}<th>Total</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 ACT['report-matrix'] = () => go('report', S.params.matrix ? {} : { matrix: 1 });
 ACT.print = () => window.print();
 
-/* ---------------- প্রোফাইল ---------------- */
+/* ---------------- Profile ---------------- */
 PAGES.profile = {
-  title: 'প্রোফাইল', icon: '👤', roles: ALL,
+  title: 'Profile', icon: '👤', roles: ALL,
   async render(v) {
     const u = S.user;
     v.innerHTML = `
       <div class="card">
         <h3>${esc(u.name)} <span class="badge">${ROLE_LABEL[u.role]}</span></h3>
         <div class="list">
-          <div class="item"><span class="grow muted">ইউজারনেম</span><span>${esc(u.username)}</span></div>
-          <div class="item"><span class="grow muted">রুম</span><span>${esc(u.room || '—')}</span></div>
-          <div class="item"><span class="grow muted">ফোন</span><span>${esc(u.phone || '—')}</span></div>
+          <div class="item"><span class="grow muted">Username</span><span>${esc(u.username)}</span></div>
+          <div class="item"><span class="grow muted">Room</span><span>${esc(u.room || '—')}</span></div>
+          <div class="item"><span class="grow muted">Phone</span><span>${esc(u.phone || '—')}</span></div>
         </div>
       </div>
       <div class="card">
-        <h3>পাসওয়ার্ড পরিবর্তন</h3>
+        <h3>Change password</h3>
         <form id="pwForm" class="stack">
-          <label>বর্তমান পাসওয়ার্ড<input type="password" name="oldPassword" required autocomplete="current-password"></label>
-          <label>নতুন পাসওয়ার্ড<input type="password" name="newPassword" required minlength="6" autocomplete="new-password"></label>
-          <button class="btn primary" type="submit">পরিবর্তন করুন</button>
+          <label>Current password<input type="password" name="oldPassword" required autocomplete="current-password"></label>
+          <label>New password<input type="password" name="newPassword" required minlength="4" autocomplete="new-password"></label>
+          <button class="btn primary" type="submit">Change password</button>
         </form>
       </div>
-      <button class="btn danger block" data-act="logout">🚪 লগআউট</button>`;
+      <button class="btn danger block" data-act="logout">🚪 Log out</button>`;
     $('#pwForm').onsubmit = async e => {
       e.preventDefault();
       const res = await call('me.password', formData(e.target)).catch(() => null);
@@ -355,7 +387,7 @@ PAGES.profile = {
       S.token = res.token;
       store.set('token', res.token);
       e.target.reset();
-      toast('পাসওয়ার্ড পরিবর্তন হয়েছে', 'ok');
+      toast('Password changed', 'ok');
     };
   }
 };

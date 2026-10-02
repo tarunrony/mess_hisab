@@ -1,38 +1,40 @@
 /**
- * মেস মিল হিসাব — Google Apps Script ব্যাকএন্ড
+ * Mess Meal Manager — Google Apps Script backend
  *
- * ডাটাবেস: এই স্ক্রিপ্ট যে Google Sheet-এর সাথে যুক্ত (Extensions > Apps Script) সেই শিট।
- * প্রথমবার: এডিটর থেকে setup() ফাংশন একবার চালান, তারপর Web App হিসেবে Deploy করুন।
+ * Database: the Google Sheet this script is attached to (Extensions → Apps Script).
+ * Deploy:   Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).
+ * Sheets, the memo photo folder and the daily auto-meal trigger are created
+ * automatically on first use — running setup() by hand is optional.
  */
 
-const APP_NAME = 'মেস মিল হিসাব';
+const APP_NAME = 'Mess Meal Manager';
 const APP_TZ = 'Asia/Dhaka';
 const TOKEN_DAYS = 30;
 
-/** Web App খুললে মূল পেজ দেখায় */
+/** Serves the app when the Web App URL is opened */
 function doGet() {
   let messName = APP_NAME;
-  try { messName = getSettings_().messName || APP_NAME; } catch (e) { /* setup বাকি */ }
+  try { messName = getSettings_().messName || APP_NAME; } catch (e) { /* first run */ }
   return HtmlService.createHtmlOutput(pageHtml_(messName))
     .setTitle(messName)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover');
 }
 
-// BUILD:PAGE-START — এক-ফাইল সংস্করণে (deploy/Code.gs) এই অংশটি এমবেড করা HTML দিয়ে বদলে যায়
-// ⚠️ এই ফাইল একা Apps Script-এ পেস্ট করলে চলবে না — এক ফাইলে চালাতে deploy/Code.gs ব্যবহার করুন।
-/** Index.html আর তার ভেতরের Styles/Js ফাইলগুলো জুড়ে পুরো পেজ বানায় */
+// BUILD:PAGE-START — in the single-file version (deploy/Code.gs) this block is replaced by embedded HTML
+// ⚠️ This file alone is not enough in Apps Script — for a single-file install use deploy/Code.gs.
+/** Builds the full page from Index.html and the Styles/Js files it includes */
 function pageHtml_(messName) {
   let t;
   try {
     t = HtmlService.createTemplateFromFile('Index');
   } catch (e) {
-    throw new Error('Index ফাইল পাওয়া যায়নি। এক ফাইলে চালাতে চাইলে deploy/Code.gs এর পুরো কোড পেস্ট করুন।');
+    throw new Error('Index file not found. For a single-file install, paste the whole of deploy/Code.gs instead.');
   }
   t.messName = messName;
   return t.evaluate().getContent();
 }
 
-/** HTML টেমপ্লেটের ভেতরে অন্য HTML ফাইল যুক্ত করে */
+/** Inserts another HTML file inside a template */
 function include(name) {
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
@@ -45,24 +47,24 @@ function escapeHtml_(s) {
 }
 
 /**
- * ফ্রন্টএন্ড থেকে সব অনুরোধ এখানে আসে (google.script.run.api)।
- * ফেরত দেয়: { ok: true, data } অথবা { ok: false, error }
+ * Every request from the frontend comes here (google.script.run.api or doPost).
+ * Returns { ok: true, data } or { ok: false, error }
  */
 function api(action, token, data) {
   let lock = null;
   try {
     const route = routes_()[action];
-    if (!route) throw new Error('অজানা অনুরোধ: ' + action);
+    if (!route) throw new Error('Unknown request: ' + action);
 
     let user = null;
     if (route.roles) {
       user = authenticate_(token);
-      if (route.roles.indexOf(user.role) === -1) throw new Error('এই কাজের অনুমতি আপনার নেই');
+      if (route.roles.indexOf(user.role) === -1) throw new Error('You do not have permission to do this');
     }
 
     if (route.write) {
       lock = LockService.getScriptLock();
-      if (!lock.tryLock(20000)) throw new Error('সার্ভার ব্যস্ত, একটু পরে আবার চেষ্টা করুন');
+      if (!lock.tryLock(20000)) throw new Error('Server is busy, please try again in a moment');
     }
 
     const payload = data && typeof data === 'object' ? data : {};
@@ -74,15 +76,15 @@ function api(action, token, data) {
   }
 }
 
-/** একই API অন্য জায়গা থেকে (যেমন GitHub Pages) fetch দিয়ে ব্যবহারের জন্য */
+/** Same API over HTTP, used by the Vercel / static-site version */
 function doPost(e) {
   let body = {};
-  try { body = JSON.parse(e.postData.contents); } catch (x) { /* খালি */ }
+  try { body = JSON.parse(e.postData.contents); } catch (x) { /* empty body */ }
   const res = api(body.action, body.token, body.data);
   return ContentService.createTextOutput(JSON.stringify(res)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** কোন অনুরোধ কে করতে পারবে */
+/** Who may call what */
 function routes_() {
   const ALL = ['admin', 'manager', 'member'];
   const MGR = ['admin', 'manager'];
@@ -132,12 +134,12 @@ function routes_() {
 }
 
 /**
- * ⚙️ প্রথমবার একবার চালান (Apps Script এডিটরে ফাংশন বেছে নিয়ে Run)।
- * শিট, গোপন কী, মেমো ফোল্ডার আর প্রতিদিনের অটো-মিল ট্রিগার তৈরি করে।
+ * Optional manual setup (select "setup" in the editor and press Run).
+ * The same things also happen automatically when the first admin is created.
  */
 function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) throw new Error('Google Sheet খুলে Extensions > Apps Script থেকে setup চালান');
+  if (!ss) throw new Error('Open the Google Sheet and run setup from Extensions → Apps Script');
 
   const props = PropertiesService.getScriptProperties();
   props.setProperty('SHEET_ID', ss.getId());
@@ -145,17 +147,21 @@ function setup() {
   props.setProperty('SCHEMA_V', SCHEMA_VERSION);
   secret_();
   memoFolder_();
+  ensureTrigger_();
+  Logger.log('✅ Setup complete. Now use Deploy → New deployment → Web app.');
+}
 
-  const existing = readAll_('Settings').map(function (r) { return r.key; });
-  const missing = Object.keys(DEFAULT_SETTINGS)
-    .filter(function (k) { return existing.indexOf(k) === -1; })
-    .map(function (k) { return { key: k, value: DEFAULT_SETTINGS[k] }; });
-  insertRows_('Settings', missing);
-
-  ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'autoMealJob') ScriptApp.deleteTrigger(t);
+/** Daily job (~12:30 AM) that fills in default meals for today and tomorrow */
+function ensureTrigger_() {
+  const exists = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === 'autoMealJob';
   });
-  ScriptApp.newTrigger('autoMealJob').timeBased().everyDays(1).atHour(0).nearMinute(30).inTimezone(APP_TZ).create();
+  if (!exists) {
+    ScriptApp.newTrigger('autoMealJob').timeBased().everyDays(1).atHour(0).nearMinute(30).inTimezone(APP_TZ).create();
+  }
+}
 
-  Logger.log('✅ Setup সম্পন্ন। এখন Deploy > New deployment > Web app করুন।');
+/** Web App URL, used for the "share login details" message */
+function appUrl_() {
+  try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
 }

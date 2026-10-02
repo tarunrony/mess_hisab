@@ -1,5 +1,5 @@
 /**
- * ডিউটি রোস্টার: বাজারের তারিখ ও ওয়াশরুম পরিষ্কারের তারিখ।
+ * Duty roster: bazar days and washroom cleaning days.
  * type: 'bazar' | 'clean', status: 'pending' | 'done' | 'missed'
  */
 
@@ -23,13 +23,13 @@ function dutiesList_(d) {
 function dutiesSave_(d, me) {
   const date = requireDate_(d.date);
   const type = DUTY_TYPES.indexOf(d.type) > -1 ? d.type : 'bazar';
-  if (!findById_('Users', d.userId)) throw new Error('সদস্য বেছে নিন');
-  const area = clean_(d.area, 60) || (type === 'clean' ? 'ওয়াশরুম' : '');
+  if (!findById_('Users', d.userId)) throw new Error('Choose a member');
+  const area = clean_(d.area, 60) || (type === 'clean' ? 'Washroom' : '');
   const status = DUTY_STATUS.indexOf(d.status) > -1 ? d.status : 'pending';
 
   if (d.id) {
     const t = findById_('Duties', d.id);
-    if (!t) throw new Error('ডিউটি পাওয়া যায়নি');
+    if (!t) throw new Error('Duty not found');
     t.type = type; t.date = date; t.userId = d.userId; t.area = area;
     t.note = clean_(d.note, 200); t.status = status; t.updatedBy = me.id;
     updateRow_('Duties', t._row, t);
@@ -44,28 +44,28 @@ function dutiesSave_(d, me) {
 
 function dutiesDelete_(d) {
   const t = findById_('Duties', d.id);
-  if (!t) throw new Error('ডিউটি পাওয়া যায়নি');
+  if (!t) throw new Error('Duty not found');
   deleteRow_('Duties', t._row);
   return dutiesList_({ month: t.date.slice(0, 7) });
 }
 
 /**
- * পালাক্রমে রোস্টার তৈরি:
- * { type, from, to, every (কত দিন পরপর), userIds (ক্রম অনুযায়ী), area, replace }
- * replace = true হলে ওই সময়ের একই ধরনের অপেক্ষমাণ ডিউটি মুছে নতুন বানায়।
+ * Builds a rotating roster:
+ * { type, from, to, every (days apart), userIds (in turn order), area, replace }
+ * With replace = true, pending duties of the same type in that period are removed first.
  */
 function dutiesGenerate_(d, me) {
   const type = DUTY_TYPES.indexOf(d.type) > -1 ? d.type : 'bazar';
-  const from = requireDate_(d.from, 'শুরুর তারিখ');
-  const to = requireDate_(d.to, 'শেষের তারিখ');
+  const from = requireDate_(d.from, 'Start date');
+  const to = requireDate_(d.to, 'End date');
   const every = Math.max(1, Math.min(31, parseInt(d.every, 10) || 1));
   const span = daysBetween_(from, to);
-  if (span < 0 || span > 92) throw new Error('সর্বোচ্চ ৯২ দিনের রোস্টার একসাথে বানানো যাবে');
+  if (span < 0 || span > 92) throw new Error('A roster can cover at most 92 days at once');
 
   const valid = {};
   readAll_('Users').forEach(function (u) { if (u.active === '1') valid[u.id] = true; });
   const userIds = (d.userIds || []).filter(function (id) { return valid[id]; });
-  if (!userIds.length) throw new Error('অন্তত একজন সদস্য বেছে নিন');
+  if (!userIds.length) throw new Error('Choose at least one member');
 
   if (d.replace) {
     const sh = sheet_('Duties');
@@ -77,7 +77,7 @@ function dutiesGenerate_(d, me) {
     delete _tableCache.Duties;
   }
 
-  const area = clean_(d.area, 60) || (type === 'clean' ? 'ওয়াশরুম' : '');
+  const area = clean_(d.area, 60) || (type === 'clean' ? 'Washroom' : '');
   const rows = [];
   for (let i = 0, k = 0; i <= span; i += every, k++) {
     rows.push({
@@ -89,13 +89,13 @@ function dutiesGenerate_(d, me) {
   return { created: rows.length };
 }
 
-/** সদস্য নিজের ডিউটি "সম্পন্ন" করতে পারে; ম্যানেজার যেকোনোটা */
+/** Members can mark their own duty done; managers any duty */
 function dutiesStatus_(d, me) {
   const t = findById_('Duties', d.id);
-  if (!t) throw new Error('ডিউটি পাওয়া যায়নি');
+  if (!t) throw new Error('Duty not found');
   const status = DUTY_STATUS.indexOf(d.status) > -1 ? d.status : 'done';
   if (me.role === 'member' && (t.userId !== me.id || status === 'missed')) {
-    throw new Error('শুধু নিজের ডিউটি সম্পন্ন করতে পারবেন');
+    throw new Error('You can only mark your own duty as done');
   }
   t.status = status;
   t.updatedBy = me.id;
