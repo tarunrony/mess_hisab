@@ -1,0 +1,374 @@
+<script>
+/* =========================================================
+   ম্যানেজার ও অ্যাডমিন: মিল এন্ট্রি, খরচ, জমা, মেমো যাচাই,
+   ডিউটি রোস্টার, সদস্য ও সেটিংস
+   ========================================================= */
+
+/* ---------------- দিনভিত্তিক মিল এন্ট্রি ---------------- */
+function dayMealBody() {
+  const st = S.day;
+  let l = 0, d = 0;
+  st.rows.forEach(r => { l += r.lunch; d += r.dinner; });
+  return `<div class="list">${st.rows.map(r => `<div class="meal-day">
+      <div class="d"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.room || '')}
+        ${r.isDefault && !st.dirty ? '<span class="badge gray">ডিফল্ট</span>' : ''}</span></div>
+      ${stepper('day-step', r.userId, 'lunch', r.lunch, false, 20)}
+      ${stepper('day-step', r.userId, 'dinner', r.dinner, false, 20)}
+    </div>`).join('') || '<div class="empty">কোনো সক্রিয় সদস্য নেই</div>'}</div>
+    <div class="grid2" style="margin-top:12px">
+      <div class="stat hl"><div class="lbl">☀️ দুপুর মোট</div><div class="val">${bn(l)}</div></div>
+      <div class="stat hl"><div class="lbl">🌙 রাত মোট</div><div class="val">${bn(d)}</div></div>
+    </div>`;
+}
+
+PAGES.daymeal = {
+  title: 'মিল এন্ট্রি (দিনভিত্তিক)', short: 'মিল এন্ট্রি', icon: '📝', roles: MGR,
+  async render(v) {
+    S.date = S.date || todayStr();
+    S.day = await call('meals.day', { date: S.date });
+    S.day.dirty = false;
+    v.innerHTML = `
+      <div class="card">
+        <div class="switcher">
+          <button class="btn sm" data-act="day-shift" data-n="-1">‹</button>
+          <input type="date" value="${S.date}" data-chg="day-pick" style="flex:1">
+          <button class="btn sm" data-act="day-shift" data-n="1">›</button>
+        </div>
+        <p class="small muted center" style="margin:0">${fmtDate(S.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <button class="btn sm" data-act="day-all" data-slot="lunch" data-v="1">সবার দুপুর ✓</button>
+          <button class="btn sm" data-act="day-all" data-slot="dinner" data-v="1">সবার রাত ✓</button>
+          <button class="btn sm danger" data-act="day-all" data-slot="both" data-v="0">সব বন্ধ</button>
+        </div>
+        <div id="dayBody">${dayMealBody()}</div>
+        <button class="btn primary block" style="margin-top:12px" data-act="day-save">💾 সেভ করুন</button>
+      </div>`;
+  }
+};
+
+ACT['day-shift'] = el => { S.date = addDays(S.date, Number(el.dataset.n)); refresh(); };
+CHG['day-pick'] = el => { if (el.value) { S.date = el.value; refresh(); } };
+ACT['day-step'] = el => {
+  const r = S.day.rows.filter(x => x.userId === el.dataset.date)[0];   // data-date এখানে userId বহন করে
+  r[el.dataset.slot] = Math.max(0, Math.min(20, r[el.dataset.slot] + Number(el.dataset.n)));
+  S.day.dirty = true;
+  $('#dayBody').innerHTML = dayMealBody();
+};
+ACT['day-all'] = el => {
+  const v = Number(el.dataset.v), slot = el.dataset.slot;   // lunch | dinner | both
+  S.day.rows.forEach(r => {
+    if (slot !== 'dinner') r.lunch = v;
+    if (slot !== 'lunch') r.dinner = v;
+  });
+  S.day.dirty = true;
+  $('#dayBody').innerHTML = dayMealBody();
+};
+ACT['day-save'] = async () => {
+  S.day = await call('meals.saveDay', { date: S.date, entries: S.day.rows.map(r => ({ userId: r.userId, lunch: r.lunch, dinner: r.dinner })) });
+  S.day.dirty = false;
+  $('#dayBody').innerHTML = dayMealBody();
+  toast(fmtDate(S.date) + ' এর মিল সেভ হয়েছে', 'ok');
+};
+
+/* ---------------- খরচ ---------------- */
+PAGES.expense = {
+  title: 'বাজার ও খরচ', short: 'খরচ', icon: '💸', roles: ALL,
+  async render(v) {
+    const list = await call('expenses.list', { month: S.month || thisMonth() });
+    S.expenses = list;
+    let bazar = 0, shared = 0;
+    list.forEach(e => { if (e.type === 'shared') shared += Number(e.amount); else bazar += Number(e.amount); });
+    v.innerHTML = `
+      ${isMgr() ? '<div class="toolbar"><button class="btn primary" data-act="exp-edit">+ খরচ যোগ করুন</button></div>' : ''}
+      ${monthNav()}
+      <div class="grid2" style="margin-bottom:14px">
+        <div class="stat"><div class="lbl">🛒 বাজার (মিলের)</div><div class="val">${tk(bazar)}</div></div>
+        <div class="stat"><div class="lbl">🏠 সাধারণ খরচ</div><div class="val">${tk(shared)}</div></div>
+      </div>
+      <div class="card"><div class="list">${list.length ? list.map(e => `<div class="item">
+        <div class="grow">
+          <div class="title">${esc(e.description || (e.type === 'shared' ? 'সাধারণ খরচ' : 'বাজার'))}</div>
+          <div class="sub">${fmtDate(e.date)} · <span class="badge ${e.type === 'shared' ? 'gray' : ''}">${e.type === 'shared' ? 'সাধারণ' : 'বাজার'}</span>
+            ${e.paidBy ? ' · নিজের টাকায়: ' + esc(e.paidByName) : ' · ফান্ড থেকে'}</div>
+        </div>
+        <span class="amount">${tk(e.amount)}</span>
+        ${e.hasImage ? `<button class="btn sm" data-act="show-image" data-kind="expense" data-id="${e.id}">🖼️</button>` : ''}
+        ${isMgr() ? `<button class="btn sm" data-act="exp-edit" data-id="${e.id}">✎</button>` : ''}
+      </div>`).join('') : '<div class="empty">এই মাসে কোনো খরচ নেই</div>'}</div></div>`;
+  }
+};
+
+ACT['exp-edit'] = async el => {
+  const users = await getUsers();
+  const e = (S.expenses || []).filter(x => x.id === el.dataset.id)[0] || { date: todayStr(), type: 'bazar' };
+  openModal(e.id ? 'খরচ সম্পাদনা' : 'নতুন খরচ', `<form class="stack">
+      <div class="grid2">
+        <label>তারিখ<input type="date" name="date" value="${e.date}" required></label>
+        <label>ধরন<select name="type">
+          <option value="bazar" ${e.type !== 'shared' ? 'selected' : ''}>🛒 বাজার (মিলের)</option>
+          <option value="shared" ${e.type === 'shared' ? 'selected' : ''}>🏠 সাধারণ (সমান ভাগ)</option></select></label>
+      </div>
+      <label>টাকা<input type="number" name="amount" step="0.01" inputmode="decimal" value="${e.amount || ''}" required></label>
+      <label>বিবরণ<input name="description" value="${esc(e.description || '')}" placeholder="যেমন: মাছ, সবজি / গ্যাস বিল"></label>
+      <label>টাকা কে দিয়েছে<select name="paidBy">${userOptions(users, e.paidBy, 'মেস ফান্ড (ম্যানেজার) থেকে')}</select></label>
+      <p class="small muted" style="margin:-6px 0 0">সদস্য নিজের পকেট থেকে দিলে তাকে বেছে নিন — টাকাটা তার জমায় যোগ হবে।</p>
+      <label>মেমোর ছবি (ঐচ্ছিক)<input type="file" accept="image/*" data-chg="preview" data-target="expPrev"></label>
+      <div id="expPrev"></div>
+      <div class="row">
+        ${e.id ? '<button type="button" class="btn danger" data-act="exp-delete" data-id="' + e.id + '">মুছুন</button>' : ''}
+        <button class="btn primary" type="submit">সেভ</button>
+      </div></form>`, async (data, form) => {
+    data.id = e.id || '';
+    data.image = await imageFromForm(form);
+    await call('expenses.save', data);
+    toast('খরচ সেভ হয়েছে', 'ok');
+    S.month = data.date.slice(0, 7);
+    refresh();
+  });
+};
+
+ACT['exp-delete'] = async el => {
+  if (!(await confirmBox('এই খরচটি মুছে ফেলবেন?', 'মুছুন'))) return;
+  await call('expenses.delete', { id: el.dataset.id });
+  toast('খরচ মুছে ফেলা হয়েছে', 'ok');
+  refresh();
+};
+
+/* ---------------- জমা ---------------- */
+PAGES.deposit = {
+  title: 'টাকা জমা', short: 'জমা', icon: '💰', roles: ALL,
+  async render(v) {
+    const list = await call('deposits.list', { month: S.month || thisMonth() });
+    S.deposits = list;
+    const total = list.reduce((s, d) => s + Number(d.amount), 0);
+    v.innerHTML = `
+      ${isMgr() ? '<div class="toolbar"><button class="btn primary" data-act="dep-edit">+ জমা যোগ করুন</button></div>' : ''}
+      ${monthNav()}
+      <div class="card">
+        <div class="card-head"><h3>${isMgr() ? 'মোট জমা' : 'আমার জমা'}</h3><span class="amount">${tk(total)}</span></div>
+        <div class="list">${list.length ? list.map(d => `<div class="item">
+          <div class="grow"><div class="title">${esc(d.name)}</div>
+            <div class="sub">${fmtDate(d.date)}${d.note ? ' · ' + esc(d.note) : ''}</div></div>
+          <span class="amount ${d.amount < 0 ? 'neg' : ''}">${tk(d.amount)}</span>
+          ${isMgr() ? `<button class="btn sm" data-act="dep-edit" data-id="${d.id}">✎</button>` : ''}
+        </div>`).join('') : '<div class="empty">এই মাসে কোনো জমা নেই</div>'}</div>
+      </div>`;
+  }
+};
+
+ACT['dep-edit'] = async el => {
+  const users = await getUsers();
+  const d = (S.deposits || []).filter(x => x.id === el.dataset.id)[0] || { date: todayStr() };
+  openModal(d.id ? 'জমা সম্পাদনা' : 'নতুন জমা', `<form class="stack">
+      <label>সদস্য<select name="userId" required>${userOptions(users, d.userId, 'বেছে নিন')}</select></label>
+      <div class="grid2">
+        <label>তারিখ<input type="date" name="date" value="${d.date}" required></label>
+        <label>টাকা<input type="number" name="amount" step="0.01" inputmode="decimal" value="${d.amount || ''}" required></label>
+      </div>
+      <label>নোট (ঐচ্ছিক)<input name="note" value="${esc(d.note || '')}" placeholder="যেমন: বিকাশে / নগদ"></label>
+      <p class="small muted" style="margin:-6px 0 0">টাকা ফেরত দিলে বা আগের মাসের বাকি সমন্বয় করতে − (মাইনাস) দিন।</p>
+      <div class="row">
+        ${d.id ? '<button type="button" class="btn danger" data-act="dep-delete" data-id="' + d.id + '">মুছুন</button>' : ''}
+        <button class="btn primary" type="submit">সেভ</button>
+      </div></form>`, async data => {
+    data.id = d.id || '';
+    await call('deposits.save', data);
+    toast('জমা সেভ হয়েছে', 'ok');
+    S.month = data.date.slice(0, 7);
+    refresh();
+  });
+};
+
+ACT['dep-delete'] = async el => {
+  if (!(await confirmBox('এই জমাটি মুছে ফেলবেন?', 'মুছুন'))) return;
+  await call('deposits.delete', { id: el.dataset.id });
+  toast('জমা মুছে ফেলা হয়েছে', 'ok');
+  refresh();
+};
+
+/* ---------------- মেমো যাচাই ---------------- */
+ACT['memo-review'] = async el => {
+  const list = await call('memos.list', { month: S.month || thisMonth() }, { silent: true });
+  const m = list.filter(x => x.id === el.dataset.id)[0];
+  if (!m) return;
+  const src = m.hasImage ? await call('image.get', { kind: 'memo', id: m.id }) : '';
+  openModal('মেমো যাচাই — ' + m.name, `<form class="stack">
+      ${src ? `<img class="memo" src="${src}" alt="মেমো">` : ''}
+      <p class="small muted" style="margin:0">${fmtDate(m.date)} · সদস্যের দেওয়া: ${tk(m.amount)}${m.note ? ' · ' + esc(m.note) : ''}</p>
+      <div class="grid2">
+        <label>অনুমোদিত টাকা<input type="number" name="amount" step="0.01" value="${m.amount}" required></label>
+        <label>ধরন<select name="type"><option value="bazar">🛒 বাজার</option><option value="shared">🏠 সাধারণ</option></select></label>
+      </div>
+      <label>বিবরণ<input name="description" value="${esc(m.note || 'বাজার')}"></label>
+      <label class="check"><input type="checkbox" name="paidByMember" checked> ${esc(m.name)} নিজের টাকায় বাজার করেছে (তার জমায় যোগ হবে)</label>
+      <div class="row">
+        <button type="button" class="btn danger" data-act="memo-reject" data-id="${m.id}">✕ বাতিল</button>
+        <button type="submit" class="btn primary">✓ অনুমোদন</button>
+      </div></form>`, async data => {
+    data.id = m.id;
+    data.action = 'approve';
+    await call('memos.review', data);
+    toast('মেমো অনুমোদিত — খরচে যোগ হয়েছে', 'ok');
+    refresh();
+  });
+};
+
+ACT['memo-reject'] = async el => {
+  await call('memos.review', { id: el.dataset.id, action: 'reject' });
+  closeModal();
+  toast('মেমো বাতিল করা হয়েছে');
+  refresh();
+};
+
+/* ---------------- ডিউটি ব্যবস্থাপনা ---------------- */
+ACT['duty-new'] = el => dutyForm(null);
+ACT['duty-edit'] = async el => {
+  const list = await call('duties.list', { month: S.month || thisMonth() }, { silent: true });
+  dutyForm(list.filter(t => t.id === el.dataset.id)[0]);
+};
+
+async function dutyForm(t) {
+  const users = await getUsers();
+  t = t || { type: 'bazar', date: todayStr(), status: 'pending' };
+  openModal(t.id ? 'ডিউটি সম্পাদনা' : 'নতুন ডিউটি', `<form class="stack">
+      <div class="grid2">
+        <label>ধরন<select name="type">
+          <option value="bazar" ${t.type === 'bazar' ? 'selected' : ''}>🛒 বাজার</option>
+          <option value="clean" ${t.type === 'clean' ? 'selected' : ''}>🚿 পরিষ্কার</option></select></label>
+        <label>তারিখ<input type="date" name="date" value="${t.date}" required></label>
+      </div>
+      <label>সদস্য<select name="userId" required>${userOptions(users, t.userId, 'বেছে নিন')}</select></label>
+      <div class="grid2">
+        <label>জায়গা (পরিষ্কারের জন্য)<input name="area" value="${esc(t.area || '')}" placeholder="ওয়াশরুম"></label>
+        <label>অবস্থা<select name="status">
+          <option value="pending" ${t.status === 'pending' ? 'selected' : ''}>বাকি</option>
+          <option value="done" ${t.status === 'done' ? 'selected' : ''}>সম্পন্ন</option>
+          <option value="missed" ${t.status === 'missed' ? 'selected' : ''}>মিস</option></select></label>
+      </div>
+      <label>নোট<input name="note" value="${esc(t.note || '')}"></label>
+      <div class="row">
+        ${t.id ? '<button type="button" class="btn danger" data-act="duty-delete" data-id="' + t.id + '">মুছুন</button>' : ''}
+        <button class="btn primary" type="submit">সেভ</button>
+      </div></form>`, async data => {
+    data.id = t.id || '';
+    await call('duties.save', data);
+    toast('ডিউটি সেভ হয়েছে', 'ok');
+    S.month = data.date.slice(0, 7);
+    refresh();
+  });
+}
+
+ACT['duty-delete'] = async el => {
+  if (!(await confirmBox('এই ডিউটিটি মুছে ফেলবেন?', 'মুছুন'))) return;
+  await call('duties.delete', { id: el.dataset.id });
+  toast('ডিউটি মুছে ফেলা হয়েছে', 'ok');
+  refresh();
+};
+
+ACT['duty-generate'] = async () => {
+  const users = (await getUsers()).filter(u => u.active === '1');
+  const start = (S.month || thisMonth()) + '-01';
+  const end = shiftMonth(S.month || thisMonth(), 1) + '-01';
+  openModal('পালাক্রমে রোস্টার তৈরি', `<form class="stack">
+      <div class="grid2">
+        <label>ধরন<select name="type"><option value="bazar">🛒 বাজার</option><option value="clean">🚿 ওয়াশরুম পরিষ্কার</option></select></label>
+        <label>কত দিন পরপর<input type="number" name="every" min="1" max="31" value="1" required></label>
+      </div>
+      <div class="grid2">
+        <label>শুরু<input type="date" name="from" value="${start}" required></label>
+        <label>শেষ<input type="date" name="to" value="${addDays(end, -1)}" required></label>
+      </div>
+      <label>জায়গা (পরিষ্কারের জন্য)<input name="area" placeholder="ওয়াশরুম"></label>
+      <div><div class="small muted" style="margin-bottom:4px">সদস্য (এই ক্রমে পালা আসবে)</div>
+        ${users.map(u => `<label class="check"><input type="checkbox" name="userIds[]" value="${esc(u.id)}" checked> ${esc(u.name)}</label>`).join('')}</div>
+      <label class="check"><input type="checkbox" name="replace" checked> এই সময়ের আগের "বাকি" ডিউটি মুছে নতুন বানাও</label>
+      <button class="btn primary" type="submit">রোস্টার তৈরি করুন</button></form>`, async (data, form) => {
+    data.userIds = $$('input[name="userIds[]"]:checked', form).map(c => c.value);
+    delete data['userIds[]'];
+    const res = await call('duties.generate', data);
+    toast(bn(res.created) + 'টি ডিউটি তৈরি হয়েছে', 'ok');
+    S.month = data.from.slice(0, 7);
+    go('duty', { type: data.type });
+  });
+};
+
+/* ---------------- সদস্য (অ্যাডমিন) ---------------- */
+PAGES.users = {
+  title: 'সদস্য ও রোল', short: 'সদস্য', icon: '👥', roles: ADM,
+  async render(v) {
+    const users = await getUsers(true);
+    v.innerHTML = `
+      <div class="toolbar"><button class="btn primary" data-act="user-edit">+ নতুন সদস্য</button></div>
+      <div class="card">
+        <p class="small muted" style="margin-top:0"><b>অ্যাডমিন</b> সব পারে ও রোল ঠিক করে · <b>ম্যানেজার</b> হিসাব, খরচ, জমা, ডিউটি দেখে ·
+          <b>সদস্য</b> নিজের মিল দেয়, মেমো আপলোড করে ও হিসাব দেখে।</p>
+        <div class="list">${users.map(u => `<div class="item">
+          <div class="grow">
+            <div class="title">${esc(u.name)} <span class="badge ${u.role === 'member' ? 'gray' : ''}">${ROLE_LABEL[u.role]}</span>
+              ${u.active !== '1' ? '<span class="badge danger">বন্ধ</span>' : ''}</div>
+            <div class="sub">@${esc(u.username)}${u.room ? ' · রুম ' + esc(u.room) : ''}${u.phone ? ' · ' + esc(u.phone) : ''}</div>
+          </div>
+          <button class="btn sm" data-act="user-edit" data-id="${u.id}">✎ সম্পাদনা</button>
+        </div>`).join('')}</div>
+      </div>`;
+  }
+};
+
+ACT['user-edit'] = async el => {
+  const u = (await getUsers()).filter(x => x.id === el.dataset.id)[0] || { role: 'member', active: '1' };
+  const roleOpt = r => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`;
+  openModal(u.id ? 'সদস্য সম্পাদনা' : 'নতুন সদস্য', `<form class="stack">
+      <label>নাম<input name="name" value="${esc(u.name || '')}" required></label>
+      <label>ইউজারনেম (লগইনের জন্য)<input name="username" value="${esc(u.username || '')}" required autocapitalize="none" placeholder="যেমন: rahim বা মোবাইল নম্বর"></label>
+      <label>${u.id ? 'নতুন পাসওয়ার্ড (রিসেট করতে চাইলে)' : 'পাসওয়ার্ড'}<input name="password" type="text" minlength="6" ${u.id ? '' : 'required'} autocomplete="off"></label>
+      <div class="grid2">
+        <label>রোল<select name="role">${roleOpt('member')}${roleOpt('manager')}${roleOpt('admin')}</select></label>
+        <label>অবস্থা<select name="active">
+          <option value="1" ${u.active === '1' ? 'selected' : ''}>সক্রিয়</option>
+          <option value="0" ${u.active !== '1' ? 'selected' : ''}>বন্ধ (মেস ছেড়েছে)</option></select></label>
+      </div>
+      <div class="grid2">
+        <label>রুম<input name="room" value="${esc(u.room || '')}"></label>
+        <label>ফোন<input name="phone" type="tel" value="${esc(u.phone || '')}"></label>
+      </div>
+      <button class="btn primary" type="submit">সেভ</button></form>`, async data => {
+    data.id = u.id || '';
+    S.users = await call('users.save', data);
+    toast('সদস্য সেভ হয়েছে' + (data.password ? ' — পাসওয়ার্ডটি সদস্যকে জানিয়ে দিন' : ''), 'ok');
+    refresh();
+  });
+};
+
+/* ---------------- সেটিংস (অ্যাডমিন) ---------------- */
+PAGES.settings = {
+  title: 'সেটিংস', icon: '⚙️', roles: ADM,
+  async render(v) {
+    const me = await call('me.get');
+    const s = me.settings;
+    v.innerHTML = `
+      <div class="card">
+        <form id="setForm" class="stack">
+          <label>মেসের নাম<input name="messName" value="${esc(s.messName)}" required></label>
+          <div class="grid2">
+            <label>দুপুরের মিল বন্ধের শেষ সময়<input type="time" name="lunchCutoff" value="${esc(s.lunchCutoff)}" required></label>
+            <label>রাতের মিল বন্ধের শেষ সময়<input type="time" name="dinnerCutoff" value="${esc(s.dinnerCutoff)}" required></label>
+          </div>
+          <label>এক বেলায় সর্বোচ্চ মিল (গেস্টসহ)<input type="number" name="maxGuestMeal" min="1" max="20" value="${esc(s.maxGuestMeal)}"></label>
+          <button class="btn primary" type="submit">সেভ করুন</button>
+        </form>
+      </div>
+      <div class="card small muted">সব তথ্য আপনার Google Sheet-এ জমা থাকে (Users, Meals, Expenses, Deposits, Duties, Memos, Settings ট্যাব)।
+        মেমোর ছবি Google Drive-এর "Mess Memo Images" ফোল্ডারে থাকে। শিটের হেডার বা কলামের ক্রম বদলাবেন না।</div>`;
+    $('#setForm').onsubmit = async e => {
+      e.preventDefault();
+      const res = await call('settings.save', formData(e.target)).catch(() => null);
+      if (!res) return;
+      S.settings = res;
+      $('#messName').textContent = res.messName;
+      toast('সেটিংস সেভ হয়েছে', 'ok');
+    };
+  }
+};
+</script>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <!-- লগইন / প্রথম অ্যাডমিন তৈরি -->
+  <section id="auth" class="auth hidden">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="brand-icon">🍛</div>
+        <h1 id="authTitle"><?= messName ?></h1>
+        <p class="muted" id="authSub">মেস মিল হিসাব</p>
+      </div>
+
+      <form id="loginForm" class="stack hidden" autocomplete="on">
+        <label>ইউজারনেম<input name="username" required autocomplete="username" autocapitalize="none"></label>
+        <label>পাসওয়ার্ড<input name="password" type="password" required autocomplete="current-password"></label>
+        <button class="btn primary block" type="submit">লগইন</button>
+        <p class="muted small center">পাসওয়ার্ড ভুলে গেলে অ্যাডমিনকে রিসেট করতে বলুন</p>
+      </form>
+
+      <form id="setupForm" class="stack hidden">
+        <div class="note">প্রথমবার চালু হচ্ছে — অ্যাডমিন অ্যাকাউন্ট তৈরি করুন</div>
+        <label>মেসের নাম<input name="messName" required placeholder="যেমন: বাসা নং ১২ মেস"></label>
+        <label>আপনার নাম<input name="name" required></label>
+        <label>ইউজারনেম<input name="username" required autocapitalize="none" placeholder="ইংরেজিতে, যেমন: tarun"></label>
+        <label>পাসওয়ার্ড<input name="password" type="password" required minlength="6"></label>
+        <button class="btn primary block" type="submit">অ্যাডমিন তৈরি করুন</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- মূল অ্যাপ -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <button class="icon-btn" data-act="menu" aria-label="মেনু">☰</button>
+      <div class="topbar-title">
+        <strong id="messName"><?= messName ?></strong>
+        <span id="pageTitle" class="muted small"></span>
+      </div>
+      <button class="user-chip" data-act="go" data-page="profile">
+        <span id="userName"></span>
+        <span id="userRole" class="badge"></span>
+      </button>
+    </header>
+
+    <aside id="drawer" class="drawer">
+      <div class="drawer-head">
+        <strong>মেনু</strong>
+        <button class="icon-btn" data-act="menu-close" aria-label="বন্ধ">✕</button>
+      </div>
+      <nav id="drawerNav"></nav>
+      <button class="btn ghost block" data-act="logout">🚪 লগআউট</button>
+    </aside>
+    <div id="scrim" class="scrim" data-act="menu-close"></div>
+
+    <main id="view" class="view"></main>
+
+    <nav id="bottomNav" class="bottom-nav"></nav>
+  </div>
+
+  <!-- ডায়ালগ -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <strong id="modalTitle"></strong>
+        <button class="icon-btn" data-act="modal-close" aria-label="বন্ধ">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="loader" class="loader hidden"><div class="spinner"></div></div>
+  <div id="toasts" class="toasts"></div>
+
+  <?!= include('JsCore'); ?>
+  <?!= include('JsPages'); ?>
+  <?!= include('JsManage'); ?>
+</body>
+</html>

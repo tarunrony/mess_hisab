@@ -1,0 +1,287 @@
+<script>
+/* ================= অবস্থা ও সহায়ক ================= */
+const ROLE_LABEL = { admin: 'অ্যাডমিন', manager: 'ম্যানেজার', member: 'সদস্য' };
+const ALL = ['admin', 'manager', 'member'], MGR = ['admin', 'manager'], ADM = ['admin'];
+
+const S = { token: null, user: null, settings: {}, page: 'home', params: {}, users: null, month: null, date: null };
+const PAGES = {};   // JsPages / JsManage এ পেজগুলো যোগ হয়
+const ACT = {};     // data-act="..." ক্লিক হ্যান্ডলার
+const CHG = {};     // data-chg="..." change হ্যান্ডলার
+
+const $ = (sel, root) => (root || document).querySelector(sel);
+const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* প্রাইভেট মোড */ } }
+};
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const bn = n => Number(n || 0).toLocaleString('bn-BD', { maximumFractionDigits: 2 });
+const tk = n => '৳' + bn(n);
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const todayStr = () => ymd(new Date());
+const thisMonth = () => todayStr().slice(0, 7);
+const addDays = (s, n) => { const p = s.split('-').map(Number); return ymd(new Date(p[0], p[1] - 1, p[2] + n)); };
+const shiftMonth = (m, n) => { const p = m.split('-').map(Number); const d = new Date(p[0], p[1] - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
+const fmtDate = (s, opt) => s ? new Date(s + 'T00:00:00').toLocaleDateString('bn-BD', opt || { day: 'numeric', month: 'short', weekday: 'short' }) : '';
+const fmtMonth = m => new Date(m + '-01T00:00:00').toLocaleDateString('bn-BD', { month: 'long', year: 'numeric' });
+const isMgr = () => !!S.user && S.user.role !== 'member';
+const isAdmin = () => !!S.user && S.user.role === 'admin';
+const signed = n => (n >= 0 ? '+' : '−') + tk(Math.abs(n));
+const balClass = n => n >= 0 ? 'pos' : 'neg';
+
+/* ================= API ================= */
+let loadCount = 0;
+function loading(on) {
+  loadCount = Math.max(0, loadCount + (on ? 1 : -1));
+  $('#loader').classList.toggle('hidden', loadCount === 0);
+}
+
+function call(action, data, opts) {
+  opts = opts || {};
+  if (!opts.silent) loading(true);
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!opts.silent) loading(false);
+        if (res && res.ok) return resolve(res.data);
+        const msg = (res && res.error) || 'কিছু একটা সমস্যা হয়েছে';
+        if (msg.indexOf('AUTH:') === 0) {
+          const wasIn = !!S.user;
+          clearSession();
+          if (wasIn) { toast(msg.slice(5).trim(), 'err'); showAuth(); }
+          return reject(new Error('auth'));
+        }
+        toast(msg, 'err');
+        reject(new Error(msg));
+      })
+      .withFailureHandler(err => {
+        if (!opts.silent) loading(false);
+        toast('সার্ভারে সংযোগ হয়নি। ইন্টারনেট দেখে আবার চেষ্টা করুন।', 'err');
+        reject(err);
+      })
+      .api(action, S.token, data || {});
+  });
+}
+
+async function getUsers(force) {
+  if (!S.users || force) S.users = await call('users.list');
+  return S.users;
+}
+function userOptions(users, selected, emptyLabel) {
+  return (emptyLabel ? `<option value="">${esc(emptyLabel)}</option>` : '') +
+    users.filter(u => u.active === '1' || u.id === selected)
+      .map(u => `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc(u.name)}${u.room ? ' (' + esc(u.room) + ')' : ''}</option>`).join('');
+}
+
+/* ================= UI: টোস্ট, মডাল ================= */
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type || '');
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), type === 'err' ? 5000 : 3000);
+}
+
+function formData(form) {
+  const o = {};
+  new FormData(form).forEach((v, k) => {
+    if (v instanceof File) return;
+    if (o[k] !== undefined) o[k] = [].concat(o[k], v); else o[k] = v;
+  });
+  $$('input[type="checkbox"]', form).forEach(c => { if (!c.name.endsWith('[]')) o[c.name] = c.checked; });
+  return o;
+}
+
+/** onSubmit(data, form) — true ফেরত দিলে ডায়ালগ খোলা থাকে */
+function openModal(title, html, onSubmit) {
+  $('#modalTitle').textContent = title;
+  $('#modalBody').innerHTML = html;
+  $('#modal').classList.remove('hidden');
+  const form = $('#modalBody form');
+  if (form && onSubmit) {
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const btn = $('button[type="submit"]', form);
+      if (btn) btn.disabled = true;
+      try {
+        const keep = await onSubmit(formData(form), form);
+        if (keep !== true) closeModal();
+      } catch (err) { /* টোস্টে দেখানো হয়েছে */ }
+      if (btn) btn.disabled = false;
+    };
+    const first = $('input:not([type="hidden"]), select, textarea', form);
+    if (first && window.innerWidth > 640) first.focus();
+  }
+}
+function closeModal() { $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; }
+
+function confirmBox(msg, okText) {
+  return new Promise(resolve => {
+    openModal('নিশ্চিত করুন', `<form class="stack"><p>${esc(msg)}</p>
+      <div class="row"><button type="button" class="btn" data-act="modal-close">না</button>
+      <button type="submit" class="btn danger">${esc(okText || 'হ্যাঁ')}</button></div></form>`, () => { resolve(true); });
+    const obs = new MutationObserver(() => { if ($('#modal').classList.contains('hidden')) { obs.disconnect(); resolve(false); } });
+    obs.observe($('#modal'), { attributes: true });
+  });
+}
+
+/* ================= ছবি ================= */
+function compressImage(file, max, quality) {
+  max = max || 1400; quality = quality || 0.75;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('ছবি পড়া যায়নি'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('এই ছবিটি খোলা যাচ্ছে না, অন্য ছবি দিন'));
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        const url = c.toDataURL('image/jpeg', quality);
+        resolve({ data: url.split(',')[1], mime: 'image/jpeg', preview: url });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/** ফর্মের ছবি ফিল্ড থেকে কমপ্রেস করা ছবি (না থাকলে null) */
+async function imageFromForm(form) {
+  const input = $('input[type="file"]', form);
+  if (!input || !input.files || !input.files[0]) return null;
+  try { const img = await compressImage(input.files[0]); delete img.preview; return img; }
+  catch (e) { toast(e.message, 'err'); throw e; }
+}
+
+CHG.preview = async el => {
+  const box = $('#' + el.dataset.target);
+  if (!box) return;
+  box.innerHTML = '';
+  if (el.files && el.files[0]) {
+    try { const img = await compressImage(el.files[0], 600, 0.6); box.innerHTML = `<img class="preview" src="${img.preview}" alt="">`; }
+    catch (e) { toast(e.message, 'err'); }
+  }
+};
+
+ACT['show-image'] = async el => {
+  const src = await call('image.get', { kind: el.dataset.kind, id: el.dataset.id });
+  openModal('মেমোর ছবি', `<img class="memo" src="${src}" alt="মেমো">`);
+};
+
+/* ================= নেভিগেশন ================= */
+const NAV_ORDER = ['home', 'mymeal', 'daymeal', 'memo', 'expense', 'deposit', 'duty', 'report', 'users', 'settings', 'profile'];
+
+function allowed(page) { return PAGES[page] && PAGES[page].roles.indexOf(S.user.role) > -1; }
+
+function renderNav() {
+  const pages = NAV_ORDER.filter(allowed);
+  $('#drawerNav').innerHTML = pages.map(p =>
+    `<a data-act="go" data-page="${p}" class="${S.page === p ? 'active' : ''}"><span>${PAGES[p].icon}</span>${PAGES[p].title}</a>`).join('');
+
+  const bottom = (isMgr() ? ['home', 'daymeal', 'memo', 'report'] : ['home', 'mymeal', 'memo', 'duty']).filter(allowed);
+  $('#bottomNav').innerHTML = bottom.map(p =>
+    `<a data-act="go" data-page="${p}" class="${S.page === p ? 'active' : ''}"><span class="ico">${PAGES[p].icon}</span>${PAGES[p].short || PAGES[p].title}
+     ${p === 'memo' && S.pendingMemos ? `<span class="dot">${bn(S.pendingMemos)}</span>` : ''}</a>`).join('') +
+    `<a data-act="menu"><span class="ico">☰</span>আরো</a>`;
+}
+
+async function go(page, params) {
+  if (!allowed(page)) page = 'home';
+  S.page = page;
+  S.params = params || {};
+  store.set('page', page);
+  $('#pageTitle').textContent = PAGES[page].title;
+  renderNav();
+  closeDrawer();
+  const view = $('#view');
+  view.innerHTML = '<div class="empty">লোড হচ্ছে…</div>';
+  window.scrollTo(0, 0);
+  try { await PAGES[page].render(view, S.params); }
+  catch (e) { if (S.page === page && e.message !== 'auth') view.innerHTML = `<div class="empty">${esc(e.message || 'লোড করা যায়নি')}<br><br><button class="btn" data-act="reload">আবার চেষ্টা</button></div>`; }
+}
+const refresh = () => go(S.page, S.params);
+
+function openDrawer() { $('#drawer').classList.add('open'); $('#scrim').classList.add('open'); }
+function closeDrawer() { $('#drawer').classList.remove('open'); $('#scrim').classList.remove('open'); }
+
+/** মাস বদলানোর বার (‹ অক্টোবর ২০২৬ ›) */
+function monthNav() {
+  S.month = S.month || thisMonth();
+  return `<div class="switcher"><button class="btn sm" data-act="month-shift" data-n="-1">‹</button>
+    <strong>${fmtMonth(S.month)}</strong>
+    <button class="btn sm" data-act="month-shift" data-n="1">›</button></div>`;
+}
+
+ACT.go = el => go(el.dataset.page, el.dataset.id ? { id: el.dataset.id } : null);
+ACT.menu = openDrawer;
+ACT['menu-close'] = closeDrawer;
+ACT['modal-close'] = closeModal;
+ACT.reload = refresh;
+ACT.logout = () => { clearSession(); showAuth(); };
+ACT['month-shift'] = el => { S.month = shiftMonth(S.month || thisMonth(), Number(el.dataset.n)); refresh(); };
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el || !ACT[el.dataset.act]) return;
+  e.preventDefault();
+  Promise.resolve().then(() => ACT[el.dataset.act](el, e)).catch(() => { /* টোস্টে দেখানো হয়েছে */ });
+});
+document.addEventListener('change', e => {
+  const el = e.target.closest('[data-chg]');
+  if (el && CHG[el.dataset.chg]) Promise.resolve().then(() => CHG[el.dataset.chg](el, e)).catch(() => {});
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeDrawer(); } });
+
+/* ================= লগইন ================= */
+function clearSession() { store.set('token', null); S.token = null; S.user = null; S.users = null; }
+
+function startApp(res) {
+  if (res.token) { S.token = res.token; store.set('token', res.token); }
+  S.user = res.user;
+  S.settings = res.settings || {};
+  S.month = thisMonth();
+  $('#messName').textContent = S.settings.messName || 'মেস মিল হিসাব';
+  $('#userName').textContent = S.user.name;
+  $('#userRole').textContent = ROLE_LABEL[S.user.role];
+  $('#auth').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  go(store.get('page') || 'home');
+}
+
+async function showAuth() {
+  $('#app').classList.add('hidden');
+  $('#auth').classList.remove('hidden');
+  $('#loginForm').classList.add('hidden');
+  $('#setupForm').classList.add('hidden');
+  const st = await call('auth.status');
+  if (st.messName) $('#authTitle').textContent = st.messName;
+  $(st.needsSetup ? '#setupForm' : '#loginForm').classList.remove('hidden');
+}
+
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try { startApp(await call('auth.login', formData(e.target))); e.target.reset(); } catch (err) { /* টোস্ট */ }
+});
+$('#setupForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try { startApp(await call('auth.setupAdmin', formData(e.target))); toast('স্বাগতম! এখন সদস্যদের যোগ করুন', 'ok'); } catch (err) { /* টোস্ট */ }
+});
+
+window.addEventListener('load', async () => {
+  S.token = store.get('token');
+  if (S.token) {
+    try { return startApp(await call('me.get')); } catch (e) { clearSession(); }
+  }
+  showAuth().catch(() => {});
+});
+</script>
